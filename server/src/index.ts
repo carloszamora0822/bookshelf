@@ -6,5 +6,5 @@ validateEnv();
 const port = parseInt(process.env.PORT || "3001", 10);
 
 app.listen(port, () => {
-  console.log(`PDF Reader API running on port ${port}`);
+  console.log(`Bookshelf API running on port ${port}`);
 });

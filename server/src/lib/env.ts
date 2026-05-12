@@ -1,7 +1,6 @@
 const required = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "SUPABASE_JWT_SECRET",
   "WORKER_SECRET",
 ] as const;
 
