@@ -1,7 +1,7 @@
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import sharp from "sharp";
-import { supabase } from "../lib/supabase.js";
+import { supabase } from "../supabase.js";
 import { uploadBuffer, downloadFile } from "./storage.js";
 
 GlobalWorkerOptions.workerSrc = "";

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireWorkerSecret } from "../middleware/auth.js";
 import { processBook, renderAndUploadCover } from "../services/extraction.js";
-import { supabase } from "../lib/supabase.js";
+import { supabase } from "../supabase.js";
 import { downloadFile } from "../services/storage.js";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 

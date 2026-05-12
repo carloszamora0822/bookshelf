@@ -1,4 +1,4 @@
-import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
+import { supabase, STORAGE_BUCKET } from "../supabase.js";
 
 const SIGNED_URL_EXPIRY = 3600; // 1 hour
 

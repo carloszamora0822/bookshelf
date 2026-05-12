@@ -223,5 +223,4 @@ function dateStr() {
   return d.toISOString().slice(0, 10);
 }
 
-// Boot
 ReactDOM.createRoot(document.getElementById("app-root")).render(<App />);

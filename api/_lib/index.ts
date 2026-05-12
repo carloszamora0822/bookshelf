@@ -1,4 +1,4 @@
-import { validateEnv } from "./lib/env.js";
+import { validateEnv } from "./env.js";
 import app from "./app.js";
 
 validateEnv();
