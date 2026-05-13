@@ -3,10 +3,21 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const supabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+if (!supabaseConfigured) {
+  console.warn(
+    "[bookshelf] Supabase env not configured. " +
+    "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (Vercel: Project → Settings → Environment Variables, then redeploy).",
+  );
+}
+
+export const supabase = supabaseConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // ───────────────────────────── http() wrapper ─────────────────────────────
 // Attaches Bearer token from current Supabase session. Throws
@@ -14,6 +25,7 @@ export const supabase = createClient(
 
 export async function http(method, path, body) {
   const endpoint = `${method} ${path}`;
+  if (!supabase) throw notConfiguredError();
   const { data: { session } } = await supabase.auth.getSession();
 
   const headers = {};
@@ -57,8 +69,15 @@ export async function http(method, path, body) {
 
 // ───────────────────────────── Auth ─────────────────────────────
 
+function notConfiguredError() {
+  return new Error(
+    "Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (in Vercel: Project → Settings → Environment Variables) and redeploy.",
+  );
+}
+
 export const auth = {
   async signIn(email) {
+    if (!supabase) throw notConfiguredError();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: window.location.origin },
@@ -67,17 +86,20 @@ export const auth = {
   },
 
   async signOut() {
+    if (!supabase) return;
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(`api.auth.signOut: ${error.message}`);
   },
 
   async getSession() {
+    if (!supabase) return null;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return null;
     return { user: session.user, access_token: session.access_token };
   },
 
   onAuthChange(cb) {
+    if (!supabase) return () => {};
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       cb(session ? { user: session.user, access_token: session.access_token } : null);
     });
