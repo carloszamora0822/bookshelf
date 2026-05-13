@@ -4,9 +4,52 @@ function BookDetail({ bookId }) {
   const app = useApp();
   const book = app.books.find(b => b.id === bookId);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [editMode, setEditMode] = useState(null); // null | "details" | "tags" | "cover"
+  const [editTitle, setEditTitle] = useState("");
+  const [editAuthor, setEditAuthor] = useState("");
+  const [newTagName, setNewTagName] = useState("");
+  const coverFileInputRef = useRef(null);
+
+  // updateBook helper — uses app.updateBook if present, else falls back to setBooks
+  const updateBook = (id, patch) => {
+    if (typeof app.updateBook === "function") return app.updateBook(id, patch);
+    app.setBooks(bs => bs.map(b => b.id === id ? { ...b, ...patch } : b));
+  };
 
   if (!book) return null;
   const tagsOf = book.tagIds.map(id => app.tags.find(t => t.id === id)).filter(Boolean);
+
+  const startEditDetails = () => {
+    setEditTitle(book.title || "");
+    setEditAuthor(book.author || "");
+    setEditMode("details");
+    setMoreOpen(false);
+  };
+  const saveDetails = () => {
+    updateBook(book.id, { title: editTitle.trim() || book.title, author: editAuthor.trim() || null });
+    setEditMode(null);
+  };
+  const cancelEdit = () => setEditMode(null);
+
+  const toggleTag = (tagId) => {
+    const has = book.tagIds.includes(tagId);
+    updateBook(book.id, {
+      tagIds: has ? book.tagIds.filter(x => x !== tagId) : [...book.tagIds, tagId],
+    });
+  };
+  const createTagInline = () => {
+    const name = newTagName.trim();
+    if (!name) return;
+    const id = `t-${Date.now()}`;
+    const palette = ["#A0826D", "#7C8E73", "#9B7B89", "#7B8FA0", "#C09A6B", "#8B7B9B"];
+    app.addTag({ id, name, color: palette[app.tags.length % palette.length] });
+    updateBook(book.id, { tagIds: [...book.tagIds, id] });
+    setNewTagName("");
+  };
+
+  const pickCoverPage = (page) => {
+    updateBook(book.id, { coverPage: page, coverMode: "page" });
+  };
 
   return (
     <div className="page-container">
@@ -19,9 +62,9 @@ function BookDetail({ bookId }) {
         <div style={{ position: "relative" }}>
           <IconButton icon={Icons.More} label="more" onClick={() => setMoreOpen(o => !o)} />
           <Menu open={moreOpen} onClose={() => setMoreOpen(false)} anchor="right">
-            <MenuItem icon={Icons.Pencil} label="Edit details" onClick={() => setMoreOpen(false)} />
-            <MenuItem icon={Icons.Image} label="Change cover" onClick={() => setMoreOpen(false)} />
-            <MenuItem icon={Icons.Tag} label="Manage tags" onClick={() => setMoreOpen(false)} />
+            <MenuItem icon={Icons.Pencil} label="Edit details" onClick={startEditDetails} />
+            <MenuItem icon={Icons.Image} label="Change cover" onClick={() => { setEditMode("cover"); setMoreOpen(false); }} />
+            <MenuItem icon={Icons.Tag} label="Manage tags" onClick={() => { setEditMode("tags"); setMoreOpen(false); }} />
             <div className="menu-divider" />
             <MenuItem icon={Icons.Trash} label="Delete book" danger onClick={() => { app.deleteBook(book.id); setMoreOpen(false); }} />
           </Menu>
@@ -40,9 +83,35 @@ function BookDetail({ bookId }) {
           <div className="eyebrow">
             {book.fileSize && book.fileSize !== "—" ? `${book.fileSize.toUpperCase()} · ` : ""}{book.pageCount} pages
           </div>
-          <h1 className="detail-title">{book.title}</h1>
-          {book.subtitle && <div className="detail-subtitle">{book.subtitle}</div>}
-          <div className="detail-byline">by <em>{book.author}</em></div>
+          {editMode === "details" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "4px 0 10px" }}>
+              <input
+                autoFocus
+                className="input"
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveDetails(); if (e.key === "Escape") cancelEdit(); }}
+                placeholder="Title"
+              />
+              <input
+                className="input"
+                value={editAuthor}
+                onChange={e => setEditAuthor(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveDetails(); if (e.key === "Escape") cancelEdit(); }}
+                placeholder="Author"
+              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <PrimaryBtn variant="accent" size="sm" onClick={saveDetails}>Save</PrimaryBtn>
+                <PrimaryBtn variant="ghost" size="sm" onClick={cancelEdit}>Cancel</PrimaryBtn>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="detail-title">{book.title}</h1>
+              {book.subtitle && <div className="detail-subtitle">{book.subtitle}</div>}
+              <div className="detail-byline">by <em>{book.author}</em></div>
+            </>
+          )}
 
           {tagsOf.length > 0 && (
             <div className="detail-tag-row">
@@ -74,6 +143,114 @@ function BookDetail({ bookId }) {
           </div>
         </div>
       </div>
+
+      {editMode === "tags" && (
+        <div className="fade-up" style={{
+          marginTop: 16, padding: "16px 18px",
+          background: "var(--bg-sunk)", border: "1px solid var(--line)", borderRadius: 14,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <div className="label">Manage tags</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditMode(null)}>Done</button>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {app.tags.map(t => (
+              <TagPill
+                key={t.id}
+                tag={t}
+                active={book.tagIds.includes(t.id)}
+                onClick={() => toggleTag(t.id)}
+              />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <input
+              className="input"
+              value={newTagName}
+              onChange={e => setNewTagName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") createTagInline(); }}
+              placeholder="New tag…"
+              style={{ flex: 1 }}
+            />
+            <PrimaryBtn variant="ghost" size="sm" onClick={createTagInline}>Add</PrimaryBtn>
+          </div>
+        </div>
+      )}
+
+      {editMode === "cover" && (
+        <div className="fade-up" style={{
+          marginTop: 16, padding: "16px 18px",
+          background: "var(--bg-sunk)", border: "1px solid var(--line)", borderRadius: 14,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+            <div className="label">Change cover</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setEditMode(null)}>Done</button>
+          </div>
+          <div style={{ color: "var(--ink-3)", fontSize: 13, marginBottom: 12 }}>
+            Tap any page to use it as the cover.
+          </div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+            gap: 14,
+          }}>
+            {genThumbStrip(null, 12).map(p => {
+              const active = book.coverMode === "page" && book.coverPage === p.page;
+              return (
+                <button key={p.page} onClick={() => pickCoverPage(p.page)} style={{ textAlign: "center" }}>
+                  <div style={{
+                    aspectRatio: "2/3",
+                    background: "var(--bg)",
+                    border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
+                    borderRadius: 4,
+                    position: "relative",
+                    overflow: "hidden",
+                    transition: "border-color var(--tx-fast)",
+                  }}>
+                    <div style={{
+                      width: "100%", height: "100%", padding: "10% 12%",
+                      display: "flex", flexDirection: "column", gap: 1.6,
+                    }}>
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <div key={i} style={{
+                          height: 1.4, borderRadius: 1, background: "var(--ink-3)",
+                          opacity: i === 0 ? 0.55 : 0.22,
+                          width: i === 0 ? "50%" : (i === 9 ? "70%" : `${78 + ((i * 13) % 22)}%`),
+                        }} />
+                      ))}
+                      <div style={{ flex: 1 }} />
+                      <div className="mono" style={{ fontSize: 6, color: "var(--ink-4)", textAlign: "center" }}>{p.page}</div>
+                    </div>
+                    {active && (
+                      <div style={{
+                        position: "absolute", top: 6, right: 6,
+                        width: 20, height: 20, borderRadius: 999,
+                        background: "var(--accent)", color: "white",
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      }}><Icons.Check size={12} /></div>
+                    )}
+                  </div>
+                  <div className="mono muted-2" style={{ marginTop: 6, fontSize: 10.5 }}>p. {p.page}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <PrimaryBtn variant="ghost" size="sm" onClick={() => coverFileInputRef.current?.click()}>
+              Upload an image
+            </PrimaryBtn>
+            <input
+              ref={coverFileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) updateBook(book.id, { coverMode: "upload", coverFile: f.name });
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="stats-strip fade-up delay-1">
@@ -174,23 +351,50 @@ function outlineCount(entries) {
   return (entries || []).reduce((n, e) => n + 1 + outlineCount(e.children || []), 0);
 }
 
-function OutlineTree({ entries, onJump, depth = 0 }) {
+function flattenOutline(entries) {
+  const out = [];
+  (entries || []).forEach(e => {
+    out.push(e);
+    if (e.children?.length) out.push(...flattenOutline(e.children));
+  });
+  return out;
+}
+
+function activeOutlineId(entries, currentPage) {
+  if (currentPage == null) return null;
+  const flat = flattenOutline(entries);
+  let active = null;
+  for (const e of flat) {
+    const p = e.page ?? e.page_number;
+    if (p != null && p <= currentPage) active = e;
+  }
+  return active ? active.id : null;
+}
+
+function OutlineTree({ entries, onJump, currentPage = null, depth = 0, activeId }) {
+  // top-level computes activeId once; children inherit it
+  const aid = depth === 0 ? activeOutlineId(entries, currentPage) : activeId;
   return (
     <div className="outline-tree">
-      {entries.map(e => (
-        <Fragment key={e.id}>
-          <button
-            className={`outline-entry depth-${depth}`}
-            onClick={() => e.page && onJump(e.page)}
-          >
-            <div className="title">{e.title}</div>
-            {e.page != null && <div className="page-num">{e.page}</div>}
-          </button>
-          {e.children?.length > 0 && (
-            <OutlineTree entries={e.children} onJump={onJump} depth={depth + 1} />
-          )}
-        </Fragment>
-      ))}
+      {entries.map(e => {
+        const isCurrent = aid != null && e.id === aid;
+        return (
+          <Fragment key={e.id}>
+            <button
+              className={`outline-entry depth-${depth}${isCurrent ? " is-current" : ""}`}
+              aria-current={isCurrent ? "page" : undefined}
+              onClick={() => e.page && onJump(e.page)}
+              style={isCurrent ? { color: "var(--accent)", fontWeight: 500 } : undefined}
+            >
+              <div className="title">{e.title}</div>
+              {e.page != null && <div className="page-num">{e.page}</div>}
+            </button>
+            {e.children?.length > 0 && (
+              <OutlineTree entries={e.children} onJump={onJump} depth={depth + 1} activeId={aid} />
+            )}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

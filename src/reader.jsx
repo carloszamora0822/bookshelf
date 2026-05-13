@@ -29,6 +29,11 @@ function Reader({ bookId, startPage }) {
     return () => clearTimeout(hideTimer.current);
   }, [armHide]);
 
+  // Reveal chrome whenever a side sheet opens or closes, so the user never lands on hidden chrome.
+  useEffect(() => {
+    resetHide();
+  }, [sheet, resetHide]);
+
   // Persist last page
   useEffect(() => {
     if (book) app.setResume(book.id, page);
@@ -47,7 +52,9 @@ function Reader({ bookId, startPage }) {
       } else if (e.key === "Escape") {
         app.goBack();
       } else if (e.key === "b" || e.key === "B") {
+        e.preventDefault();
         app.toggleBookmark(book.id, page);
+        resetHide();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -181,7 +188,7 @@ function Reader({ bookId, startPage }) {
       )}
       {sheet === "toc" && (
         <BottomSheet open={true} onClose={() => setSheet(null)} title="Contents" side={desktop ? null : "right"}>
-          <OutlineTree entries={book.outline} onJump={(p) => { goPage(p); setSheet(null); }} />
+          <OutlineTree entries={book.outline} onJump={(p) => { goPage(p); setSheet(null); }} currentPage={page} />
         </BottomSheet>
       )}
       {sheet === "bookmarks" && (

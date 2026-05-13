@@ -232,7 +232,20 @@ function BookList({ books, tagById, onOpen, onLongPress }) {
   return (
     <div className="book-list">
       {books.map(b => (
-        <button key={b.id} className="book-row" onClick={() => onOpen(b.id)}>
+        <div
+          key={b.id}
+          className="book-row"
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpen(b.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onOpen(b.id);
+            }
+          }}
+          onContextMenu={(e) => { e.preventDefault(); onLongPress?.(b.id); }}
+        >
           <div className="cover-thumb">
             <CoverArt book={b} />
           </div>
@@ -255,7 +268,7 @@ function BookList({ books, tagById, onOpen, onLongPress }) {
             onClick={(e) => { e.stopPropagation(); onLongPress?.(b.id); }}
             className="icon-btn-sm"
           />
-        </button>
+        </div>
       ))}
     </div>
   );

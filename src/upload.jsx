@@ -1,10 +1,12 @@
 // Upload flow — file → metadata → cover
+import { books } from "./api.js";
 
 function UploadSheet({ open, onClose }) {
   const app = useApp();
   const [step, setStep] = useState("file");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState(blankDraft());
 
   useEffect(() => {
@@ -12,58 +14,136 @@ function UploadSheet({ open, onClose }) {
       setStep("file");
       setUploading(false);
       setProgress(0);
+      setSubmitting(false);
       setDraft(blankDraft());
     }
   }, [open]);
 
-  const simulateUpload = (filename) => {
+  // Revoke object URLs we created for cover previews when component unmounts
+  // or when the preview URL is replaced.
+  useEffect(() => {
+    return () => {
+      if (draft.coverPreviewUrl) {
+        try { URL.revokeObjectURL(draft.coverPreviewUrl); } catch {}
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePickedFile = (file) => {
+    const filename = file.name || "Manuscript.pdf";
+    const title = filename
+      .replace(/\.pdf$/i, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    setDraft(d => ({ ...d, file, filename, title }));
+    setStep("meta");
+  };
+
+  const handleSave = async () => {
+    if (submitting) return;
+    if (!draft.file) {
+      app.showToast?.("Upload failed — no file selected");
+      return;
+    }
+    setSubmitting(true);
     setUploading(true);
     setProgress(0);
-    const title = filename.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
-    setDraft(d => ({ ...d, filename, title, pageCount: 142 + Math.floor(Math.random() * 200) }));
-    const t = setInterval(() => {
-      setProgress(p => {
-        const next = p + 6 + Math.random() * 14;
-        if (next >= 100) { clearInterval(t); setUploading(false); setStep("meta"); return 100; }
-        return next;
+    try {
+      // 1. Request signed URL
+      const { upload_url, file_path } = await books.uploadUrl({
+        filename: draft.file.name,
+        size_bytes: draft.file.size,
       });
-    }, 120);
+
+      // 2. Upload the file with progress callback.
+      // Prefer API client; if it doesn't expose progress, the callback simply
+      // never fires and we'll just see the indeterminate-ish UI complete on resolve.
+      await books.uploadFile(upload_url, draft.file, (p) => {
+        const pct = typeof p === "number"
+          ? p
+          : (p && p.loaded && p.total ? (p.loaded / p.total) * 100 : 0);
+        if (Number.isFinite(pct)) setProgress(Math.max(0, Math.min(100, pct)));
+      });
+      setProgress(100);
+
+      // 3. Create the book record
+      const book = await books.create({
+        title: draft.title,
+        author: draft.author || null,
+        file_path,
+        file_size_bytes: draft.file.size,
+        tag_ids: draft.tagIds,
+      });
+
+      // 4. Apply cover choice
+      if (draft.coverMode === "upload" && draft.coverImageFile) {
+        await books.cover(book.id, draft.coverImageFile);
+      } else if (draft.coverMode === "page" && draft.coverPage !== 1) {
+        await books.cover(book.id, { source: "page", page: draft.coverPage });
+      }
+
+      // 5. Hand back to app — pass the real book object
+      app.confirmUpload(book);
+      onClose();
+    } catch (err) {
+      const message = (err && (err.message || err.error)) || String(err) || "Unknown error";
+      app.showToast?.(`Upload failed — ${message}`);
+      setUploading(false);
+      setProgress(0);
+      setSubmitting(false);
+    }
   };
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Add a book">
-      {step === "file" && !uploading && <FileStep onPick={simulateUpload} onClose={onClose} />}
+      {step === "file" && !uploading && (
+        <FileStep onPick={handlePickedFile} onClose={onClose} />
+      )}
       {uploading && <UploadingStep filename={draft.filename} progress={progress} />}
-      {step === "meta" && (
+      {step === "meta" && !uploading && (
         <MetaStep
           draft={draft}
           setDraft={setDraft}
           tags={app.tags}
+          submitting={submitting}
           onCreateTag={(name) => {
             const id = `t-${Date.now()}`;
             app.addTag({ id, name, color: pickTagColor(app.tags.length) });
             return id;
           }}
           onPickCoverPage={() => setStep("cover-page")}
-          onUploadCover={() => setDraft(d => ({ ...d, coverMode: "upload" }))}
-          onSave={() => { app.confirmUpload(draft); onClose(); }}
+          onUploadCover={(file, previewUrl) => {
+            setDraft(d => {
+              if (d.coverPreviewUrl && d.coverPreviewUrl !== previewUrl) {
+                try { URL.revokeObjectURL(d.coverPreviewUrl); } catch {}
+              }
+              return { ...d, coverMode: "upload", coverImageFile: file, coverPreviewUrl: previewUrl };
+            });
+          }}
+          onSave={handleSave}
           onCancel={onClose}
         />
       )}
-      {step === "cover-page" && <CoverPageStep draft={draft} setDraft={setDraft} onBack={() => setStep("meta")} />}
+      {step === "cover-page" && (
+        <CoverPageStep draft={draft} setDraft={setDraft} onBack={() => setStep("meta")} />
+      )}
     </BottomSheet>
   );
 }
 
 function blankDraft() {
   return {
+    file: null,
     filename: "",
     title: "",
     author: "",
     tagIds: [],
     coverMode: "page",
     coverPage: 1,
-    pageCount: 0,
+    coverImageFile: null,
+    coverPreviewUrl: null,
   };
 }
 
@@ -96,7 +176,7 @@ function FileStep({ onPick, onClose }) {
           e.preventDefault();
           setHover(false);
           const file = e.dataTransfer.files?.[0];
-          onPick(file ? file.name : "Manuscript.pdf");
+          if (file) onPick(file);
         }}
       >
         <div style={{
@@ -123,7 +203,7 @@ function FileStep({ onPick, onClose }) {
           type="file"
           accept="application/pdf"
           style={{ display: "none" }}
-          onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f.name); }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) onPick(f); }}
         />
       </div>
 
@@ -132,7 +212,14 @@ function FileStep({ onPick, onClose }) {
       </div>
 
       <div style={{ marginTop: 22, display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <PrimaryBtn variant="ghost" onClick={() => onPick("Walden.pdf")}>Use demo file</PrimaryBtn>
+        <PrimaryBtn variant="ghost" onClick={() => {
+          const demo = new File(
+            [new Blob(["%PDF-1.4\n"], { type: "application/pdf" })],
+            "Walden.pdf",
+            { type: "application/pdf" }
+          );
+          onPick(demo);
+        }}>Use demo file</PrimaryBtn>
         <PrimaryBtn variant="ghost" onClick={onClose}>Cancel</PrimaryBtn>
       </div>
     </div>
@@ -178,8 +265,23 @@ function UploadingStep({ filename, progress }) {
 
 // ─────────────── Meta step ───────────────
 
-function MetaStep({ draft, setDraft, tags, onCreateTag, onPickCoverPage, onUploadCover, onSave, onCancel }) {
+function MetaStep({ draft, setDraft, tags, submitting, onCreateTag, onPickCoverPage, onUploadCover, onSave, onCancel }) {
   const [newTag, setNewTag] = useState("");
+  const coverFileInput = useRef(null);
+
+  const triggerCoverPicker = () => {
+    coverFileInput.current?.click();
+  };
+
+  const handleCoverFileChange = (e) => {
+    const file = e.target.files?.[0];
+    // Reset input so picking the same file twice still fires onChange
+    e.target.value = "";
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    onUploadCover(file, url);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <Field label="Title">
@@ -248,7 +350,18 @@ function MetaStep({ draft, setDraft, tags, onCreateTag, onPickCoverPage, onUploa
             color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 10,
             textAlign: "center", letterSpacing: "0.04em",
             flexShrink: 0,
-          }}>page {draft.coverPage}</div>
+            overflow: "hidden",
+          }}>
+            {draft.coverMode === "upload" && draft.coverPreviewUrl ? (
+              <img
+                src={draft.coverPreviewUrl}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            ) : (
+              <span>page {draft.coverPage}</span>
+            )}
+          </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
             <CoverOption
               active={draft.coverMode === "page" && draft.coverPage === 1}
@@ -266,16 +379,25 @@ function MetaStep({ draft, setDraft, tags, onCreateTag, onPickCoverPage, onUploa
             <CoverOption
               active={draft.coverMode === "upload"}
               label="Upload an image"
-              hint="JPG or PNG"
-              onClick={onUploadCover}
+              hint={draft.coverImageFile ? draft.coverImageFile.name : "JPG or PNG"}
+              onClick={triggerCoverPicker}
+            />
+            <input
+              ref={coverFileInput}
+              type="file"
+              accept="image/jpeg,image/png"
+              style={{ display: "none" }}
+              onChange={handleCoverFileChange}
             />
           </div>
         </div>
       </Field>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
-        <PrimaryBtn variant="ghost" onClick={onCancel}>Cancel</PrimaryBtn>
-        <PrimaryBtn variant="accent" onClick={onSave}>Add to library</PrimaryBtn>
+        <PrimaryBtn variant="ghost" onClick={onCancel} disabled={submitting}>Cancel</PrimaryBtn>
+        <PrimaryBtn variant="accent" onClick={onSave} disabled={submitting}>
+          {submitting ? "Adding…" : "Add to library"}
+        </PrimaryBtn>
       </div>
     </div>
   );

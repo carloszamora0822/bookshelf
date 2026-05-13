@@ -24,13 +24,13 @@ function Settings() {
 
       <SettingsSection title="Account" delay={1}>
         <SettingsRow label="Email">
-          <span className="muted">adanzamora2005@gmail.com</span>
+          <span className="muted">{app.session?.user?.email || "—"}</span>
         </SettingsRow>
         <SettingsRow label="Display name">
           <span className="muted">—</span>
         </SettingsRow>
         <SettingsRow label="">
-          <PrimaryBtn variant="ghost" leadIcon={Icons.LogOut}>Sign out</PrimaryBtn>
+          <PrimaryBtn variant="ghost" leadIcon={Icons.LogOut} onClick={() => app.signOut?.()}>Sign out</PrimaryBtn>
         </SettingsRow>
       </SettingsSection>
 
