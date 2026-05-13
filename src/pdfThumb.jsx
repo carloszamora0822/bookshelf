@@ -86,6 +86,38 @@ function usePdfDoc(source, cacheKey) {
   return state;
 }
 
+// Walk the PDF's embedded outline (TOC) and resolve each dest to a page
+// number. Returns [] if the PDF has no outline. Done client-side so the
+// server doesn't need to re-parse the PDF just to extract metadata.
+async function extractPdfOutline(doc) {
+  const raw = await doc.getOutline();
+  if (!raw || raw.length === 0) return [];
+
+  async function resolvePage(item) {
+    if (!item.dest) return null;
+    try {
+      const dest = typeof item.dest === "string"
+        ? await doc.getDestination(item.dest)
+        : item.dest;
+      if (Array.isArray(dest) && dest[0]) {
+        return (await doc.getPageIndex(dest[0])) + 1;
+      }
+    } catch { /* dest resolution can fail on some PDFs */ }
+    return null;
+  }
+
+  async function walk(items) {
+    const out = [];
+    for (const item of items) {
+      const pageNumber = await resolvePage(item);
+      const children = item.items?.length ? await walk(item.items) : [];
+      out.push({ title: item.title || "", pageNumber, children });
+    }
+    return out;
+  }
+  return await walk(raw);
+}
+
 // Render a single PDF page to a Blob (defaults to JPEG, sized for a cover).
 // Used by the upload + detail flows so cover generation can happen
 // client-side, bypassing node-canvas on Vercel entirely.
@@ -219,4 +251,4 @@ const PdfPageThumb = React.memo(function PdfPageThumb({ doc, page, ratio = 2 / 3
   );
 });
 
-Object.assign(window, { usePdfDoc, PdfPageThumb, loadPdfDoc, renderPdfPageToBlob });
+Object.assign(window, { usePdfDoc, PdfPageThumb, loadPdfDoc, renderPdfPageToBlob, extractPdfOutline });

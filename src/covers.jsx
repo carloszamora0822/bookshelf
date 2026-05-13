@@ -5,6 +5,23 @@ const VB_W = 200;
 const VB_H = 300;
 
 function CoverArt({ book }) {
+  // If a real cover image was generated (uploaded or rendered from a PDF
+  // page), prefer that over the generative SVG fallback.
+  if (book.coverUrl) {
+    return (
+      <img
+        src={book.coverUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        style={{
+          width: "100%", height: "100%",
+          objectFit: "cover", display: "block",
+        }}
+      />
+    );
+  }
+
   const c = COVERS[book.coverKey] || COVERS.walden;
   const innerPad = VB_W * 0.085;
   const titleFontSize = VB_W * 0.11;

@@ -6,10 +6,7 @@ import {
   createSignedDownloadUrl,
   deleteFile,
   uploadBuffer,
-  downloadFile,
 } from "../services/storage.js";
-import { processBook, renderAndUploadCover } from "../services/extraction.js";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { Book, Tag } from "../types/index.js";
 import multer from "multer";
 
@@ -21,12 +18,28 @@ const uploadUrlSchema = z.object({
   size_bytes: z.number().int().positive().max(104857600),
 });
 
+type OutlineNodeInput = {
+  title: string;
+  pageNumber: number | null;
+  children: OutlineNodeInput[];
+};
+
+const outlineNodeSchema: z.ZodType<OutlineNodeInput> = z.lazy(() =>
+  z.object({
+    title: z.string().max(500),
+    pageNumber: z.number().int().positive().nullable(),
+    children: z.array(outlineNodeSchema),
+  })
+);
+
 const createBookSchema = z.object({
   title: z.string().min(1).max(500),
   author: z.string().max(500).nullable().optional(),
   file_path: z.string().min(1),
   file_size_bytes: z.number().int().positive().optional(),
   tag_ids: z.array(z.string().uuid()).optional(),
+  page_count: z.number().int().nonnegative().optional(),
+  outline: z.array(outlineNodeSchema).optional(),
 });
 
 const updateBookSchema = z.object({
@@ -68,7 +81,7 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, author, file_path, file_size_bytes, tag_ids } = parsed.data;
+  const { title, author, file_path, file_size_bytes, tag_ids, page_count, outline } = parsed.data;
 
   const { data: book, error } = await supabase
     .from("books")
@@ -78,6 +91,9 @@ router.post("/", async (req: Request, res: Response) => {
       author: author || null,
       file_path,
       file_size_bytes: file_size_bytes || null,
+      page_count: page_count ?? null,
+      extraction_status: "completed",
+      has_outline: !!(outline && outline.length > 0),
     })
     .select()
     .single();
@@ -98,20 +114,58 @@ router.post("/", async (req: Request, res: Response) => {
     await supabase.from("book_tags").insert(tagRows);
   }
 
-  // Run extraction inline. On Vercel, anything not awaited before res.send()
-  // is killed when the function instance terminates — so fire-and-forget here
-  // means the cover never renders and book_pages is never populated.
-  try {
-    await triggerExtraction(book.id);
-  } catch (err) {
-    console.error("Extraction failed:", err instanceof Error ? err.message : err);
-    // Don't fail the request — the book row exists, the file is uploaded.
-    // The client can still open the book; extraction_status will read "failed".
+  // Insert outline entries client-extracted via pdfjs. Server doesn't need
+  // to re-parse the PDF — getOutline() in the browser is the same code as
+  // pdfjs-dist's node build, and skipping the server-side download cuts the
+  // upload's critical path by several seconds.
+  if (outline && outline.length > 0) {
+    try {
+      await insertOutlineEntries(book.id, outline, null);
+    } catch (err) {
+      console.error("Outline insert failed:", err);
+      // Don't fail the request — the book is usable without TOC.
+      await supabase
+        .from("books")
+        .update({ has_outline: false })
+        .eq("id", book.id);
+    }
   }
 
   const bookWithTags = await getBookWithTags(book.id);
   res.status(201).json(bookWithTags);
 });
+
+// Walks the client-supplied outline tree and inserts rows. Each row stores
+// its order within its sibling group; parent_id threads the hierarchy.
+async function insertOutlineEntries(
+  bookId: string,
+  nodes: OutlineNodeInput[],
+  parentId: string | null,
+): Promise<void> {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const { data: row, error } = await supabase
+      .from("book_outline_entries")
+      .insert({
+        book_id: bookId,
+        parent_id: parentId,
+        title: node.title.slice(0, 500),
+        page_number: node.pageNumber,
+        order_index: i,
+      })
+      .select("id")
+      .single();
+
+    if (error || !row) {
+      console.error("Outline insert error:", error);
+      continue;
+    }
+
+    if (node.children && node.children.length > 0) {
+      await insertOutlineEntries(bookId, node.children, row.id);
+    }
+  }
+}
 
 // GET /api/books
 router.get("/", async (req: Request, res: Response) => {
@@ -328,50 +382,8 @@ router.post("/:id/cover", upload.single("image"), async (req: Request, res: Resp
       cover_page: updated?.cover_page,
       cover_path: updated?.cover_path,
     });
-  } else if (req.body.source === "page" && req.body.page) {
-    // Page mode — re-render cover for a specific page. Must await: on Vercel,
-    // any work not finished before res.send() gets killed with the instance.
-    const page = parseInt(req.body.page, 10);
-    if (isNaN(page) || page < 1) {
-      res.status(400).json({ error: { code: "validation", message: "Invalid page number" } });
-      return;
-    }
-
-    await supabase
-      .from("books")
-      .update({ cover_page: page, cover_source: "page" })
-      .eq("id", book.id);
-
-    try {
-      await triggerCoverRender(book.id, page);
-    } catch (err) {
-      console.error("Cover render failed:", err instanceof Error ? err.message : err);
-      res.status(500).json({
-        error: { code: "internal", message: "Cover render failed", detail: String(err) },
-      });
-      return;
-    }
-
-    // Re-fetch to get the updated cover_path written by renderAndUploadCover
-    const { data: updated } = await supabase
-      .from("books")
-      .select("cover_source, cover_page, cover_path")
-      .eq("id", book.id)
-      .single();
-
-    let cover_url: string | null = null;
-    if (updated?.cover_path) {
-      try { cover_url = await createSignedDownloadUrl(updated.cover_path); } catch { /* ignore */ }
-    }
-
-    res.json({
-      cover_url,
-      cover_source: updated?.cover_source || "page",
-      cover_page: updated?.cover_page ?? page,
-      cover_path: updated?.cover_path || null,
-    });
   } else {
-    res.status(400).json({ error: { code: "validation", message: "Provide an image file or { source: 'page', page: number }" } });
+    res.status(400).json({ error: { code: "validation", message: "Provide an image file" } });
   }
 });
 
@@ -484,29 +496,6 @@ async function getBookWithTags(bookId: string): Promise<Book> {
 
   const { book_tags: _, ...rest } = bookAny;
   return { ...rest, tags, cover_url } as Book;
-}
-
-// Run extraction in-process. On Vercel there is no localhost worker to POST
-// to, so we just call the service directly. Fire-and-forget — caller does
-// not await, so the HTTP response returns before this finishes.
-async function triggerExtraction(bookId: string) {
-  await processBook(bookId);
-}
-
-async function triggerCoverRender(bookId: string, page: number) {
-  const { data: book } = await supabase
-    .from("books")
-    .select("file_path, user_id")
-    .eq("id", bookId)
-    .single();
-  if (!book) return;
-  const pdfBuffer = await downloadFile(book.file_path);
-  const pdfDoc = await getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
-  try {
-    await renderAndUploadCover(bookId, book.user_id, pdfDoc, page);
-  } finally {
-    pdfDoc.destroy();
-  }
 }
 
 export default router;

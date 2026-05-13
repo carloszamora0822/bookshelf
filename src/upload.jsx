@@ -68,18 +68,31 @@ function UploadSheet({ open, onClose }) {
       });
       setProgress(100);
 
-      // 3. Create the book record AND render the cover blob in parallel.
-      // The cover render doesn't need book.id (only the upload needs it),
-      // so we can rasterize the page while the server is busy storing the
-      // book row + extracting metadata.
+      // 3. Parse the PDF in the browser to extract everything the server
+      // would have had to re-download and re-parse: page count, outline,
+      // and the chosen cover page. Done in parallel with the create call
+      // so the round-trip is the bottleneck, not the parse.
+      const doc = await window.loadPdfDoc(draft.file);
+      const pageCount = doc?.numPages || 0;
+
+      const outlinePromise = (async () => {
+        try {
+          return await window.extractPdfOutline(doc);
+        } catch (err) {
+          console.error("Outline extract failed:", err);
+          return [];
+        }
+      })();
+
       const coverFilePromise = (async () => {
         if (draft.coverMode === "upload" && draft.coverImageFile) {
           return draft.coverImageFile;
         }
-        const doc = await window.loadPdfDoc(draft.file);
         const blob = await window.renderPdfPageToBlob(doc, draft.coverPage || 1);
         return new File([blob], `cover-page-${draft.coverPage || 1}.jpg`, { type: blob.type });
       })();
+
+      const outline = await outlinePromise;
 
       const book = await books.create({
         title: draft.title,
@@ -87,6 +100,8 @@ function UploadSheet({ open, onClose }) {
         file_path,
         file_size_bytes: draft.file.size,
         tag_ids: draft.tagIds,
+        page_count: pageCount,
+        outline,
       });
 
       // 4. Upload the rendered cover. Avoids node-canvas on Vercel — the

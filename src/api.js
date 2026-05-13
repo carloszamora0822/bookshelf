@@ -132,8 +132,8 @@ export const books = {
     return http("GET", `/api/books/${id}`);
   },
 
-  create({ title, author, file_path, file_size_bytes, tag_ids }) {
-    return http("POST", "/api/books", { title, author, file_path, file_size_bytes, tag_ids });
+  create({ title, author, file_path, file_size_bytes, tag_ids, page_count, outline }) {
+    return http("POST", "/api/books", { title, author, file_path, file_size_bytes, tag_ids, page_count, outline });
   },
 
   update(id, patch) {

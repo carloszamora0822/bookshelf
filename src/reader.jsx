@@ -76,9 +76,17 @@ function Reader({ bookId, startPage }) {
   const isBookmarked = book.bookmarks.some(bm => bm.page === page);
   const notesForPage = book.notes.filter(n => n.page === page);
 
+  // Quiet — used by swipe/scroll. Page changes during reading shouldn't
+  // pop the chrome back into view; that's the user's main annoyance.
+  const setPageQuiet = (n) => {
+    setPage(Math.max(1, Math.min(totalPages, n)));
+  };
+
+  // Loud — used by keyboard nav, scrubber, sheet jumps. Discrete UI actions
+  // are the cases where the chrome should briefly reveal so the user sees
+  // the result.
   const goPage = (n) => {
-    const p = Math.max(1, Math.min(totalPages, n));
-    setPage(p);
+    setPageQuiet(n);
     resetHide();
   };
 
@@ -133,8 +141,8 @@ function Reader({ bookId, startPage }) {
         ) : !pdfDoc ? (
           <ReaderLoading message={pdfLoading ? "Loading book…" : "Preparing…"} />
         ) : pageMode === "horizontal"
-          ? <HorizontalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={goPage} desktop={desktop} />
-          : <VerticalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={goPage} desktop={desktop} />
+          ? <HorizontalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={setPageQuiet} desktop={desktop} />
+          : <VerticalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={setPageQuiet} desktop={desktop} />
         }
 
         {/* Brightness overlay */}
