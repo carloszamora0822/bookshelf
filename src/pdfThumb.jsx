@@ -69,10 +69,15 @@ function usePdfDoc(source) {
 // Renders a single page to a <canvas>. Defers actual rasterisation until
 // the element is within ~200px of the viewport — important because the
 // cover picker may show hundreds of pages.
-function PdfPageThumb({ doc, page, ratio = 2 / 3 }) {
+//
+// ratio: if numeric, the wrapper enforces that aspect ratio (good for grids).
+//        if null, the wrapper takes full width AND full height of its parent
+//        (good for the reader, which sets its own page dimensions).
+// eager: skip IntersectionObserver and render immediately (reader pages).
+function PdfPageThumb({ doc, page, ratio = 2 / 3, eager = false }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(eager);
   const [rendered, setRendered] = useState(false);
 
   useEffect(() => {
@@ -139,12 +144,15 @@ function PdfPageThumb({ doc, page, ratio = 2 / 3 }) {
     };
   }, [doc, page, visible]);
 
+  const wrapStyle = ratio
+    ? { width: "100%", aspectRatio: String(ratio) }
+    : { width: "100%", height: "100%" };
+
   return (
     <div
       ref={wrapRef}
       style={{
-        width: "100%",
-        aspectRatio: String(ratio),
+        ...wrapStyle,
         background: "var(--bg)",
         position: "relative",
         overflow: "hidden",

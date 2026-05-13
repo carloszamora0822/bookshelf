@@ -13,6 +13,10 @@ function Reader({ bookId, startPage }) {
   const [sheet, setSheet] = useState(null); // 'notes' | 'toc' | 'bookmarks' | 'jump' | 'brightness'
   const [drafts, setDrafts] = useState({});
 
+  // Load the actual PDF. book.fileUrl arrives after hydrateBook resolves.
+  const { doc: pdfDoc, loading: pdfLoading, error: pdfError } = usePdfDoc(book?.fileUrl || null);
+  const totalPages = pdfDoc?.numPages || book?.pageCount || 1;
+
   // Auto-hide chrome
   const hideTimer = useRef(null);
   const armHide = useCallback(() => {
@@ -68,7 +72,7 @@ function Reader({ bookId, startPage }) {
   const notesForPage = book.notes.filter(n => n.page === page);
 
   const goPage = (n) => {
-    const p = Math.max(1, Math.min(book.pageCount, n));
+    const p = Math.max(1, Math.min(totalPages, n));
     setPage(p);
     resetHide();
   };
@@ -119,9 +123,13 @@ function Reader({ bookId, startPage }) {
           if (!chromeVisible) resetHide();
         }
       }}>
-        {pageMode === "horizontal"
-          ? <HorizontalPages book={book} page={page} setPage={goPage} desktop={desktop} />
-          : <VerticalPages book={book} page={page} setPage={goPage} desktop={desktop} />
+        {pdfError ? (
+          <ReaderError message="Couldn't open this PDF." />
+        ) : !pdfDoc ? (
+          <ReaderLoading message={pdfLoading ? "Loading book…" : "Preparing…"} />
+        ) : pageMode === "horizontal"
+          ? <HorizontalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={goPage} desktop={desktop} />
+          : <VerticalPages doc={pdfDoc} pageCount={totalPages} page={page} setPage={goPage} desktop={desktop} />
         }
 
         {/* Brightness overlay */}
@@ -135,10 +143,10 @@ function Reader({ bookId, startPage }) {
 
       {/* Bottom chrome */}
       <div className={`reader-chrome-bot ${chromeVisible ? "" : "reader-chrome-hidden"}`}>
-        <PageScrubber pageCount={book.pageCount} page={page} onChange={goPage} bookmarks={book.bookmarks} />
+        <PageScrubber pageCount={totalPages} page={page} onChange={goPage} bookmarks={book.bookmarks} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div className="page-pill">
-            {page} <span style={{ color: "var(--ink-4)" }}>/ {book.pageCount}</span>
+            {page} <span style={{ color: "var(--ink-4)" }}>/ {totalPages}</span>
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             <IconButton
@@ -204,7 +212,7 @@ function Reader({ bookId, startPage }) {
       )}
       {sheet === "jump" && (
         <BottomSheet open={true} onClose={() => setSheet(null)} title="Jump to page">
-          <JumpToPage pageCount={book.pageCount} current={page} onJump={(p) => { goPage(p); setSheet(null); }} />
+          <JumpToPage pageCount={totalPages} current={page} onJump={(p) => { goPage(p); setSheet(null); }} />
         </BottomSheet>
       )}
       {sheet === "brightness" && (
@@ -223,7 +231,7 @@ function Reader({ bookId, startPage }) {
 
 // ─────────────── Horizontal page-turn ───────────────
 
-function HorizontalPages({ book, page, setPage, desktop }) {
+function HorizontalPages({ doc, pageCount, page, setPage, desktop }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState({ w: 600, h: 800 });
   const [drag, setDrag] = useState(0);
@@ -271,7 +279,7 @@ function HorizontalPages({ book, page, setPage, desktop }) {
     const x = e.touches?.[0]?.clientX ?? e.clientX;
     const dx = x - startX.current;
     const stepP = isSpread ? 2 : 1;
-    if ((page <= 1 && dx > 0) || (page + stepP - 1 >= book.pageCount && dx < 0)) {
+    if ((page <= 1 && dx > 0) || (page + stepP - 1 >= pageCount && dx < 0)) {
       setDrag(dx * 0.25);
     } else {
       setDrag(dx);
@@ -283,7 +291,7 @@ function HorizontalPages({ book, page, setPage, desktop }) {
     const t = drag / W;
     const stepP = isSpread ? 2 : 1;
     let target = page;
-    if (t < -0.18 && page + stepP - 1 < book.pageCount) target = page + stepP;
+    if (t < -0.18 && page + stepP - 1 < pageCount) target = page + stepP;
     else if (t > 0.18 && page > 1) target = Math.max(1, page - stepP);
     startX.current = null;
     const startDrag = drag;
@@ -318,7 +326,7 @@ function HorizontalPages({ book, page, setPage, desktop }) {
       style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "pan-y", cursor: drag !== 0 ? "grabbing" : "grab" }}
     >
       {visiblePages.map(p => {
-        if (p < 1 || p > book.pageCount) return null;
+        if (p < 1 || p > pageCount) return null;
         const offset = (p - page) * (stageW + 32);
         return (
           <div key={p} data-pagetap="1" style={{
@@ -331,11 +339,11 @@ function HorizontalPages({ book, page, setPage, desktop }) {
             gap: isSpread ? 16 : 0,
           }}>
             <div data-pagetap="1" style={{ width: pageW, height: pageH }}>
-              <PdfPage book={book} pageNum={p} />
+              <PdfPage doc={doc} pageNum={p} />
             </div>
-            {isSpread && p + 1 <= book.pageCount && (
+            {isSpread && p + 1 <= pageCount && (
               <div data-pagetap="1" style={{ width: pageW, height: pageH }}>
-                <PdfPage book={book} pageNum={p + 1} />
+                <PdfPage doc={doc} pageNum={p + 1} />
               </div>
             )}
           </div>
@@ -347,7 +355,7 @@ function HorizontalPages({ book, page, setPage, desktop }) {
 
 // ─────────────── Vertical scroll mode ───────────────
 
-function VerticalPages({ book, page, setPage, desktop }) {
+function VerticalPages({ doc, pageCount, page, setPage, desktop }) {
   const scrollRef = useRef(null);
   const pageRefs = useRef({});
   const [wrapW, setWrapW] = useState(600);
@@ -377,7 +385,7 @@ function VerticalPages({ book, page, setPage, desktop }) {
 
   // Render window
   const range = [];
-  for (let p = Math.max(1, page - 3); p <= Math.min(book.pageCount, page + 3); p++) range.push(p);
+  for (let p = Math.max(1, page - 3); p <= Math.min(pageCount, page + 3); p++) range.push(p);
 
   const padX = desktop ? 80 : 22;
   const pageW = Math.max(280, Math.min(720, wrapW - padX * 2));
@@ -402,116 +410,46 @@ function VerticalPages({ book, page, setPage, desktop }) {
           data-pagetap="1"
           style={{ width: pageW, height: pageH, flexShrink: 0 }}
         >
-          <PdfPage book={book} pageNum={p} />
+          <PdfPage doc={doc} pageNum={p} />
         </div>
       ))}
     </div>
   );
 }
 
-// ─────────────── A typeset "PDF" page ───────────────
+// ─────────────── A rendered PDF page ───────────────
 
-function PdfPage({ book, pageNum }) {
-  const src = window.PAGES?.[book.pageSrc] || [];
-  const content = src.length ? src[(pageNum - 1) % src.length] : { kind: "page", body: "…" };
-  const isFirst = pageNum === 1 || content.kind === "chap";
-
-  const extra = [];
-  if (src.length > 1) {
-    for (let k = 1; k <= 2; k++) {
-      const idx = (pageNum - 1 + k) % src.length;
-      if (src[idx]?.kind === "page") extra.push(src[idx].body);
-    }
-  }
-
+function PdfPage({ doc, pageNum }) {
   return (
-    <div className="reader-page-card" data-pagetap="1" style={{ width: "100%", height: "100%" }}>
-      {/* Running head */}
-      <div data-pagetap="1" style={{
-        display: "flex", justifyContent: "space-between",
-        fontFamily: "var(--serif)", fontStyle: "italic",
-        fontSize: "clamp(10px, 1.4cqi, 13px)",
-        color: "var(--ink-4)",
-        padding: "5.5% 8.5% 0",
-        letterSpacing: "0.02em",
-      }}>
-        <span>{book.title}</span>
-        <span>{book.author}</span>
-      </div>
-
-      <div data-pagetap="1" style={{
-        flex: 1, minHeight: 0,
-        padding: "2.2% 8.5% 5%",
-        display: "flex", flexDirection: "column", gap: "0.9em",
-        overflow: "hidden",
-      }}>
-        {isFirst && content.head && (
-          <div data-pagetap="1" style={{
-            fontFamily: "var(--mono)", fontSize: "clamp(11px, 1.4cqi, 13px)",
-            fontWeight: 500, letterSpacing: "0.2em",
-            color: "var(--ink-3)", textTransform: "uppercase",
-          }}>{content.head}</div>
-        )}
-        {isFirst && content.title && (
-          <h2 data-pagetap="1" style={{
-            fontFamily: "var(--display)",
-            fontSize: "clamp(22px, 3.6cqi, 38px)",
-            fontWeight: 400, letterSpacing: "-0.02em",
-            color: "var(--ink)", lineHeight: 1.05,
-            fontVariationSettings: '"opsz" 96, "SOFT" 40',
-            margin: 0,
-          }}>{content.title}</h2>
-        )}
-
-        <p data-pagetap="1" style={{
-          fontFamily: "var(--serif)",
-          fontSize: "clamp(13px, 1.85cqi, 17px)",
-          lineHeight: 1.62,
-          color: "var(--ink)",
-          margin: 0,
-          textAlign: "justify",
-          textWrap: "pretty",
-          hyphens: "auto",
-          WebkitHyphens: "auto",
-          fontFeatureSettings: '"liga", "kern", "onum"',
-        }}>
-          {isFirst && <span style={{
-            float: "left",
-            fontFamily: "var(--display)",
-            fontSize: "clamp(48px, 8cqi, 78px)",
-            lineHeight: 0.86,
-            fontWeight: 400,
-            marginRight: 8, marginTop: 4,
-            color: "var(--accent)",
-            fontVariationSettings: '"opsz" 144, "SOFT" 0',
-          }}>{content.body.charAt(0)}</span>}
-          {isFirst ? content.body.slice(1) : content.body}
-        </p>
-
-        {extra.map((para, i) => (
-          <p key={i} data-pagetap="1" style={{
-            fontFamily: "var(--serif)",
-            fontSize: "clamp(13px, 1.85cqi, 17px)",
-            lineHeight: 1.62,
-            color: "var(--ink)",
-            margin: 0,
-            textAlign: "justify",
-            textWrap: "pretty",
-            hyphens: "auto",
-            WebkitHyphens: "auto",
-            textIndent: "1.4em",
-          }}>{para}</p>
-        ))}
-      </div>
-
-      <div data-pagetap="1" style={{
-        textAlign: "center",
-        fontFamily: "var(--serif)", fontStyle: "italic",
-        fontSize: "clamp(10px, 1.3cqi, 13px)",
-        color: "var(--ink-4)",
-        padding: "0 8.5% 4%",
-      }}>{pageNum}</div>
+    <div className="reader-page-card" data-pagetap="1" style={{
+      width: "100%", height: "100%",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      overflow: "hidden",
+    }}>
+      <PdfPageThumb doc={doc} page={pageNum} ratio={null} eager />
     </div>
+  );
+}
+
+function ReaderLoading({ message }) {
+  return (
+    <div style={{
+      position: "absolute", inset: 0,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      color: "var(--ink-4)", fontFamily: "var(--mono)", fontSize: 12,
+      letterSpacing: "0.04em",
+    }}>{message}</div>
+  );
+}
+
+function ReaderError({ message }) {
+  return (
+    <div style={{
+      position: "absolute", inset: 0,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      color: "var(--ink-3)", fontFamily: "var(--serif)", fontStyle: "italic",
+      fontSize: 15,
+    }}>{message}</div>
   );
 }
 

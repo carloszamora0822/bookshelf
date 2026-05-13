@@ -98,10 +98,16 @@ router.post("/", async (req: Request, res: Response) => {
     await supabase.from("book_tags").insert(tagRows);
   }
 
-  // Trigger extraction asynchronously (in-process on serverless — see helper)
-  triggerExtraction(book.id).catch((err) =>
-    console.error("Extraction failed:", err instanceof Error ? err.message : err)
-  );
+  // Run extraction inline. On Vercel, anything not awaited before res.send()
+  // is killed when the function instance terminates — so fire-and-forget here
+  // means the cover never renders and book_pages is never populated.
+  try {
+    await triggerExtraction(book.id);
+  } catch (err) {
+    console.error("Extraction failed:", err instanceof Error ? err.message : err);
+    // Don't fail the request — the book row exists, the file is uploaded.
+    // The client can still open the book; extraction_status will read "failed".
+  }
 
   const bookWithTags = await getBookWithTags(book.id);
   res.status(201).json(bookWithTags);
@@ -323,7 +329,8 @@ router.post("/:id/cover", upload.single("image"), async (req: Request, res: Resp
       cover_path: updated?.cover_path,
     });
   } else if (req.body.source === "page" && req.body.page) {
-    // Page mode — re-trigger cover render for a specific page
+    // Page mode — re-render cover for a specific page. Must await: on Vercel,
+    // any work not finished before res.send() gets killed with the instance.
     const page = parseInt(req.body.page, 10);
     if (isNaN(page) || page < 1) {
       res.status(400).json({ error: { code: "validation", message: "Invalid page number" } });
@@ -335,16 +342,33 @@ router.post("/:id/cover", upload.single("image"), async (req: Request, res: Resp
       .update({ cover_page: page, cover_source: "page" })
       .eq("id", book.id);
 
-    // Trigger re-extraction of cover
-    triggerCoverRender(book.id, page).catch((err) =>
-      console.error("Cover render failed:", err)
-    );
+    try {
+      await triggerCoverRender(book.id, page);
+    } catch (err) {
+      console.error("Cover render failed:", err instanceof Error ? err.message : err);
+      res.status(500).json({
+        error: { code: "internal", message: "Cover render failed", detail: String(err) },
+      });
+      return;
+    }
+
+    // Re-fetch to get the updated cover_path written by renderAndUploadCover
+    const { data: updated } = await supabase
+      .from("books")
+      .select("cover_source, cover_page, cover_path")
+      .eq("id", book.id)
+      .single();
+
+    let cover_url: string | null = null;
+    if (updated?.cover_path) {
+      try { cover_url = await createSignedDownloadUrl(updated.cover_path); } catch { /* ignore */ }
+    }
 
     res.json({
-      cover_url: null,
-      cover_source: "page",
-      cover_page: page,
-      cover_path: null,
+      cover_url,
+      cover_source: updated?.cover_source || "page",
+      cover_page: updated?.cover_page ?? page,
+      cover_path: updated?.cover_path || null,
     });
   } else {
     res.status(400).json({ error: { code: "validation", message: "Provide an image file or { source: 'page', page: number }" } });
