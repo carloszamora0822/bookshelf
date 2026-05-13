@@ -144,14 +144,13 @@ export const books = {
     return http("DELETE", `/api/books/${id}`);
   },
 
-  // payload: either a File (image) or { source: "page", page: number }
+  // payload: a File or Blob (the rendered cover image). Covers are always
+  // rasterized client-side and uploaded as a file — the server's
+  // node-canvas path is unreliable on Vercel.
   cover(id, payload) {
-    if (payload instanceof File || payload instanceof Blob) {
-      const fd = new FormData();
-      fd.append("image", payload);
-      return http("POST", `/api/books/${id}/cover`, fd);
-    }
-    return http("POST", `/api/books/${id}/cover`, payload);
+    const fd = new FormData();
+    fd.append("image", payload);
+    return http("POST", `/api/books/${id}/cover`, fd);
   },
 
   resume(id, page) {

@@ -14,7 +14,12 @@ function Reader({ bookId, startPage }) {
   const [drafts, setDrafts] = useState({});
 
   // Load the actual PDF. book.fileUrl arrives after hydrateBook resolves.
-  const { doc: pdfDoc, loading: pdfLoading, error: pdfError } = usePdfDoc(book?.fileUrl || null);
+  // Cache by book.filePath (stable across signed-URL rotations) so flipping
+  // away from the reader and back inside the same session is instant.
+  const { doc: pdfDoc, loading: pdfLoading, error: pdfError } = usePdfDoc(
+    book?.fileUrl || null,
+    book?.filePath || null,
+  );
   const totalPages = pdfDoc?.numPages || book?.pageCount || 1;
 
   // Auto-hide chrome

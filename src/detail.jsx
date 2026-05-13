@@ -11,9 +11,13 @@ function BookDetail({ bookId }) {
   const coverFileInputRef = useRef(null);
 
   // Load the PDF only when the cover editor is open — avoids fetching the
-  // file just to view a book's detail page.
+  // file just to view a book's detail page. Cache by file_path so this
+  // dovetails with the Reader's cache.
   const pdfSource = editMode === "cover" ? (book?.fileUrl || null) : null;
-  const { doc: pdfDoc, loading: pdfLoading } = usePdfDoc(pdfSource);
+  const { doc: pdfDoc, loading: pdfLoading } = usePdfDoc(
+    pdfSource,
+    editMode === "cover" ? (book?.filePath || null) : null,
+  );
 
   // updateBook helper — uses app.updateBook if present, else falls back to setBooks
   const updateBook = (id, patch) => {
@@ -56,14 +60,20 @@ function BookDetail({ bookId }) {
     const prev = { coverPage: book.coverPage, coverMode: book.coverMode, coverUrl: book.coverUrl };
     updateBook(book.id, { coverPage: page, coverMode: "page" });
     try {
-      const res = await window.api.books.cover(book.id, { source: "page", page });
+      // Render client-side from the PDF we already have loaded for the
+      // picker, then POST as a file. Same code path as upload — avoids
+      // the server-side node-canvas render entirely.
+      if (!pdfDoc) throw new Error("PDF not loaded yet");
+      const blob = await window.renderPdfPageToBlob(pdfDoc, page);
+      const file = new File([blob], `cover-page-${page}.jpg`, { type: blob.type });
+      const res = await window.api.books.cover(book.id, file);
       updateBook(book.id, {
-        coverPage: res.cover_page ?? page,
-        coverMode: res.cover_source || "page",
+        coverPage: page,
+        coverMode: "page",
         coverPath: res.cover_path || null,
         coverUrl: res.cover_url || null,
       });
-      app.showToast?.("Cover updating…");
+      app.showToast?.("Cover updated");
     } catch (err) {
       console.error("pickCoverPage:", err);
       updateBook(book.id, prev);

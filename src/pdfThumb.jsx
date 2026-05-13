@@ -9,38 +9,55 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-// File/Blob → pdf doc cache (so re-mounts during a single upload session
-// don't re-parse the whole PDF).
-const fileDocCache = new WeakMap();
-const urlDocCache = new Map();
+// In-session caches. Keyed by either an opaque cacheKey (preferred: stable
+// across signed-URL rotations) or by the source itself.
+const fileDocCache = new WeakMap();   // File/Blob → Promise<doc>
+const keyedDocCache = new Map();      // string cacheKey → Promise<doc>
+const urlDocCache = new Map();        // raw URL → Promise<doc>
 
-async function loadPdfDoc(source) {
+async function loadPdfDoc(source, cacheKey) {
   if (!source) return null;
-  if (typeof source === "string") {
-    const cached = urlDocCache.get(source);
+
+  if (cacheKey) {
+    const cached = keyedDocCache.get(cacheKey);
     if (cached) return cached;
+  }
+
+  if (typeof source === "string") {
+    if (!cacheKey) {
+      const cached = urlDocCache.get(source);
+      if (cached) return cached;
+    }
     const promise = pdfjsLib.getDocument({ url: source }).promise;
-    urlDocCache.set(source, promise);
+    if (cacheKey) keyedDocCache.set(cacheKey, promise);
+    else urlDocCache.set(source, promise);
     try {
       return await promise;
     } catch (err) {
-      urlDocCache.delete(source);
+      if (cacheKey) keyedDocCache.delete(cacheKey);
+      else urlDocCache.delete(source);
       throw err;
     }
   }
-  if (fileDocCache.has(source)) return fileDocCache.get(source);
+
+  if (!cacheKey && fileDocCache.has(source)) return fileDocCache.get(source);
   const buf = await source.arrayBuffer();
   const promise = pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
-  fileDocCache.set(source, promise);
+  if (cacheKey) keyedDocCache.set(cacheKey, promise);
+  else fileDocCache.set(source, promise);
   try {
     return await promise;
   } catch (err) {
-    fileDocCache.delete(source);
+    if (cacheKey) keyedDocCache.delete(cacheKey);
+    else fileDocCache.delete(source);
     throw err;
   }
 }
 
-function usePdfDoc(source) {
+// usePdfDoc(source, cacheKey?)
+// cacheKey lets you dedupe by something stable (e.g., book.filePath) so a
+// fresh signed URL on every hydrate still hits the in-memory cache.
+function usePdfDoc(source, cacheKey) {
   const [state, setState] = useState({ doc: null, error: null, loading: !!source });
 
   useEffect(() => {
@@ -49,8 +66,11 @@ function usePdfDoc(source) {
       setState({ doc: null, error: null, loading: false });
       return;
     }
-    setState({ doc: null, error: null, loading: true });
-    loadPdfDoc(source)
+    // If we already have a doc for this cacheKey, the loadPdfDoc call
+    // resolves synchronously next tick — no need to flash "loading".
+    const cached = cacheKey ? keyedDocCache.get(cacheKey) : null;
+    setState({ doc: null, error: null, loading: !cached });
+    loadPdfDoc(source, cacheKey)
       .then(doc => {
         if (!cancelled) setState({ doc, error: null, loading: false });
       })
@@ -61,9 +81,28 @@ function usePdfDoc(source) {
         }
       });
     return () => { cancelled = true; };
-  }, [source]);
+  }, [source, cacheKey]);
 
   return state;
+}
+
+// Render a single PDF page to a Blob (defaults to JPEG, sized for a cover).
+// Used by the upload + detail flows so cover generation can happen
+// client-side, bypassing node-canvas on Vercel entirely.
+async function renderPdfPageToBlob(doc, pageNum, opts = {}) {
+  const { type = "image/jpeg", quality = 0.92, maxWidth = 1200 } = opts;
+  const page = await doc.getPage(pageNum);
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(maxWidth / base.width, 3);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const ctx = canvas.getContext("2d");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error("toBlob returned null"))), type, quality);
+  });
 }
 
 // Renders a single page to a <canvas>. Defers actual rasterisation until
@@ -180,4 +219,4 @@ function PdfPageThumb({ doc, page, ratio = 2 / 3, eager = false }) {
   );
 }
 
-Object.assign(window, { usePdfDoc, PdfPageThumb, loadPdfDoc });
+Object.assign(window, { usePdfDoc, PdfPageThumb, loadPdfDoc, renderPdfPageToBlob });

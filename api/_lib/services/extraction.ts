@@ -39,23 +39,8 @@ export async function processBook(bookId: string): Promise<void> {
       .update({ page_count: pageCount })
       .eq("id", bookId);
 
-    const pageRows: { book_id: string; page_number: number; text_content: string }[] = [];
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await pdfDoc.getPage(i);
-      const textContent = await page.getTextContent();
-      const text = textContent.items
-        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-        .join(" ");
-      pageRows.push({ book_id: bookId, page_number: i, text_content: text });
-    }
-
-    if (pageRows.length > 0) {
-      const { error: insertErr } = await supabase
-        .from("book_pages")
-        .upsert(pageRows);
-      if (insertErr) console.error("Failed to insert pages:", insertErr);
-    }
-
+    // Outline is cheap and only metadata — keep it server-side so the
+    // detail/reader's TOC works without an extra client round-trip.
     const outline = await pdfDoc.getOutline() as OutlineItem[] | null;
     if (outline && outline.length > 0) {
       await insertOutline(bookId, outline, pdfDoc as unknown as PdfDocForOutline, null);
@@ -65,8 +50,11 @@ export async function processBook(bookId: string): Promise<void> {
         .eq("id", bookId);
     }
 
-    const coverPage = book.cover_page || 1;
-    await renderAndUploadCover(bookId, book.user_id, pdfDoc, coverPage);
+    // Cover rendering used to happen here via node-canvas, which is flaky
+    // on Vercel serverless. It now happens in the browser (the client
+    // already has the PDF parsed via pdfjs) and POSTs to /cover. Per-page
+    // text extraction also lived in this function but nothing read from
+    // book_pages, so it was removed — saves the bulk of upload latency.
 
     await supabase
       .from("books")

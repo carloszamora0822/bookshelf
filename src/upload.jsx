@@ -68,7 +68,19 @@ function UploadSheet({ open, onClose }) {
       });
       setProgress(100);
 
-      // 3. Create the book record
+      // 3. Create the book record AND render the cover blob in parallel.
+      // The cover render doesn't need book.id (only the upload needs it),
+      // so we can rasterize the page while the server is busy storing the
+      // book row + extracting metadata.
+      const coverFilePromise = (async () => {
+        if (draft.coverMode === "upload" && draft.coverImageFile) {
+          return draft.coverImageFile;
+        }
+        const doc = await window.loadPdfDoc(draft.file);
+        const blob = await window.renderPdfPageToBlob(doc, draft.coverPage || 1);
+        return new File([blob], `cover-page-${draft.coverPage || 1}.jpg`, { type: blob.type });
+      })();
+
       const book = await books.create({
         title: draft.title,
         author: draft.author || null,
@@ -77,15 +89,22 @@ function UploadSheet({ open, onClose }) {
         tag_ids: draft.tagIds,
       });
 
-      // 4. Apply cover choice
-      if (draft.coverMode === "upload" && draft.coverImageFile) {
-        await books.cover(book.id, draft.coverImageFile);
-      } else if (draft.coverMode === "page" && draft.coverPage !== 1) {
-        await books.cover(book.id, { source: "page", page: draft.coverPage });
+      // 4. Upload the rendered cover. Avoids node-canvas on Vercel — the
+      // /cover file branch uses sharp for resize + WebP, which works fine.
+      let coverResp = null;
+      try {
+        const coverFile = await coverFilePromise;
+        coverResp = await books.cover(book.id, coverFile);
+      } catch (err) {
+        // Don't block the upload over a cover failure — the book is usable.
+        console.error("Cover render failed:", err);
+        app.showToast?.("Book added — cover render failed, edit it from the book page");
       }
 
-      // 5. Hand back to app — pass the real book object
-      app.confirmUpload(book);
+      // 5. Hand back to app. /cover returns only cover-related fields, so
+      // merge them into the full create-response book.
+      const merged = coverResp ? { ...book, ...coverResp } : book;
+      app.confirmUpload(merged);
       onClose();
     } catch (err) {
       const message = (err && (err.message || err.error)) || String(err) || "Unknown error";
