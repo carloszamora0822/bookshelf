@@ -268,6 +268,7 @@ function UploadingStep({ filename, progress }) {
 function MetaStep({ draft, setDraft, tags, submitting, onCreateTag, onPickCoverPage, onUploadCover, onSave, onCancel }) {
   const [newTag, setNewTag] = useState("");
   const coverFileInput = useRef(null);
+  const { doc: previewDoc } = usePdfDoc(draft.coverMode === "page" ? draft.file : null);
 
   const triggerCoverPicker = () => {
     coverFileInput.current?.click();
@@ -358,6 +359,8 @@ function MetaStep({ draft, setDraft, tags, submitting, onCreateTag, onPickCoverP
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               />
+            ) : previewDoc ? (
+              <PdfPageThumb doc={previewDoc} page={draft.coverPage} />
             ) : (
               <span>page {draft.coverPage}</span>
             )}
@@ -435,7 +438,9 @@ function CoverOption({ active, label, hint, icon: I, onClick }) {
 // ─────────────── Cover page picker ───────────────
 
 function CoverPageStep({ draft, setDraft, onBack }) {
-  const pages = genThumbStrip(null, 12);
+  const { doc, loading, error } = usePdfDoc(draft.file);
+  const numPages = doc?.numPages || 0;
+
   return (
     <div>
       <button onClick={onBack} className="btn btn-ghost btn-sm" style={{ padding: "5px 10px" }}>
@@ -445,67 +450,52 @@ function CoverPageStep({ draft, setDraft, onBack }) {
         Pick a cover page
       </div>
       <div style={{ color: "var(--ink-3)", fontSize: 13.5, marginTop: 4 }}>
-        Tap any page to use it as the cover.
+        {loading && "Reading PDF…"}
+        {error && "Couldn't read this PDF. Pick page 1 or upload an image instead."}
+        {!loading && !error && numPages > 0 && `Tap any page to use it as the cover. ${numPages.toLocaleString()} pages.`}
       </div>
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
-        gap: 14, marginTop: 22,
-      }}>
-        {pages.map(p => {
-          const active = draft.coverPage === p.page;
-          return (
-            <button
-              key={p.page}
-              onClick={() => setDraft(d => ({ ...d, coverPage: p.page, coverMode: "page" }))}
-              style={{ textAlign: "center" }}
-            >
-              <div style={{
-                aspectRatio: "2/3",
-                background: "var(--bg-sunk)",
-                border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
-                borderRadius: 4,
-                position: "relative",
-                overflow: "hidden",
-                transition: "border-color var(--tx-fast)",
-              }}>
-                <FakePageThumb num={p.page} />
-                {active && (
-                  <div style={{
-                    position: "absolute", top: 6, right: 6,
-                    width: 20, height: 20, borderRadius: 999,
-                    background: "var(--accent)", color: "white",
-                    display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  }}><Icons.Check size={12} /></div>
-                )}
-              </div>
-              <div className="mono muted-2" style={{ marginTop: 6, fontSize: 10.5 }}>p. {p.page}</div>
-            </button>
-          );
-        })}
-      </div>
+      {numPages > 0 && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+          gap: 14, marginTop: 22,
+          maxHeight: "60vh", overflowY: "auto", paddingRight: 4,
+        }}>
+          {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => {
+            const active = draft.coverPage === pageNum;
+            return (
+              <button
+                key={pageNum}
+                onClick={() => setDraft(d => ({ ...d, coverPage: pageNum, coverMode: "page" }))}
+                style={{ textAlign: "center" }}
+              >
+                <div style={{
+                  aspectRatio: "2/3",
+                  background: "var(--bg-sunk)",
+                  border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
+                  borderRadius: 4,
+                  position: "relative",
+                  overflow: "hidden",
+                  transition: "border-color var(--tx-fast)",
+                }}>
+                  <PdfPageThumb doc={doc} page={pageNum} />
+                  {active && (
+                    <div style={{
+                      position: "absolute", top: 6, right: 6,
+                      width: 20, height: 20, borderRadius: 999,
+                      background: "var(--accent)", color: "white",
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    }}><Icons.Check size={12} /></div>
+                  )}
+                </div>
+                <div className="mono muted-2" style={{ marginTop: 6, fontSize: 10.5 }}>p. {pageNum}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div style={{ marginTop: 22, display: "flex", justifyContent: "flex-end" }}>
         <PrimaryBtn variant="accent" onClick={onBack}>Done</PrimaryBtn>
       </div>
-    </div>
-  );
-}
-
-function FakePageThumb({ num }) {
-  return (
-    <div style={{
-      width: "100%", height: "100%", padding: "10% 12%",
-      display: "flex", flexDirection: "column", gap: 1.6,
-    }}>
-      {Array.from({ length: 10 }).map((_, i) => (
-        <div key={i} style={{
-          height: 1.4, borderRadius: 1,
-          background: "var(--ink-3)",
-          opacity: i === 0 ? 0.55 : 0.22,
-          width: i === 0 ? "50%" : (i === 9 ? "70%" : `${78 + ((i * 13) % 22)}%`),
-        }} />
-      ))}
-      <div style={{ flex: 1 }} />
-      <div className="mono" style={{ fontSize: 6, color: "var(--ink-4)", textAlign: "center" }}>{num}</div>
     </div>
   );
 }

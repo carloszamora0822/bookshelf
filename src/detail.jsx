@@ -10,6 +10,11 @@ function BookDetail({ bookId }) {
   const [newTagName, setNewTagName] = useState("");
   const coverFileInputRef = useRef(null);
 
+  // Load the PDF only when the cover editor is open — avoids fetching the
+  // file just to view a book's detail page.
+  const pdfSource = editMode === "cover" ? (book?.fileUrl || null) : null;
+  const { doc: pdfDoc, loading: pdfLoading } = usePdfDoc(pdfSource);
+
   // updateBook helper — uses app.updateBook if present, else falls back to setBooks
   const updateBook = (id, patch) => {
     if (typeof app.updateBook === "function") return app.updateBook(id, patch);
@@ -47,8 +52,41 @@ function BookDetail({ bookId }) {
     setNewTagName("");
   };
 
-  const pickCoverPage = (page) => {
+  const pickCoverPage = async (page) => {
+    const prev = { coverPage: book.coverPage, coverMode: book.coverMode, coverUrl: book.coverUrl };
     updateBook(book.id, { coverPage: page, coverMode: "page" });
+    try {
+      const res = await window.api.books.cover(book.id, { source: "page", page });
+      updateBook(book.id, {
+        coverPage: res.cover_page ?? page,
+        coverMode: res.cover_source || "page",
+        coverPath: res.cover_path || null,
+        coverUrl: res.cover_url || null,
+      });
+      app.showToast?.("Cover updating…");
+    } catch (err) {
+      console.error("pickCoverPage:", err);
+      updateBook(book.id, prev);
+      app.showToast?.("Couldn't update cover");
+    }
+  };
+
+  const uploadCoverImage = async (file) => {
+    const prev = { coverMode: book.coverMode, coverUrl: book.coverUrl, coverPath: book.coverPath, coverPage: book.coverPage };
+    try {
+      const res = await window.api.books.cover(book.id, file);
+      updateBook(book.id, {
+        coverMode: res.cover_source || "upload",
+        coverPage: res.cover_page ?? null,
+        coverPath: res.cover_path || null,
+        coverUrl: res.cover_url || null,
+      });
+      app.showToast?.("Cover updated");
+    } catch (err) {
+      console.error("uploadCoverImage:", err);
+      updateBook(book.id, prev);
+      app.showToast?.("Couldn't upload cover");
+    }
   };
 
   return (
@@ -187,53 +225,45 @@ function BookDetail({ bookId }) {
             <button className="btn btn-ghost btn-sm" onClick={() => setEditMode(null)}>Done</button>
           </div>
           <div style={{ color: "var(--ink-3)", fontSize: 13, marginBottom: 12 }}>
-            Tap any page to use it as the cover.
+            {pdfLoading && "Loading PDF…"}
+            {!pdfLoading && !pdfDoc && "PDF isn't available yet — wait for extraction to finish, or upload an image."}
+            {pdfDoc && `Tap any page to use it as the cover. ${pdfDoc.numPages.toLocaleString()} pages.`}
           </div>
-          <div style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
-            gap: 14,
-          }}>
-            {genThumbStrip(null, 12).map(p => {
-              const active = book.coverMode === "page" && book.coverPage === p.page;
-              return (
-                <button key={p.page} onClick={() => pickCoverPage(p.page)} style={{ textAlign: "center" }}>
-                  <div style={{
-                    aspectRatio: "2/3",
-                    background: "var(--bg)",
-                    border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
-                    borderRadius: 4,
-                    position: "relative",
-                    overflow: "hidden",
-                    transition: "border-color var(--tx-fast)",
-                  }}>
+          {pdfDoc && (
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+              gap: 14,
+              maxHeight: "55vh", overflowY: "auto", paddingRight: 4,
+            }}>
+              {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map(pageNum => {
+                const active = book.coverMode === "page" && book.coverPage === pageNum;
+                return (
+                  <button key={pageNum} onClick={() => pickCoverPage(pageNum)} style={{ textAlign: "center" }}>
                     <div style={{
-                      width: "100%", height: "100%", padding: "10% 12%",
-                      display: "flex", flexDirection: "column", gap: 1.6,
+                      aspectRatio: "2/3",
+                      background: "var(--bg)",
+                      border: `1.5px solid ${active ? "var(--accent)" : "var(--line)"}`,
+                      borderRadius: 4,
+                      position: "relative",
+                      overflow: "hidden",
+                      transition: "border-color var(--tx-fast)",
                     }}>
-                      {Array.from({ length: 10 }).map((_, i) => (
-                        <div key={i} style={{
-                          height: 1.4, borderRadius: 1, background: "var(--ink-3)",
-                          opacity: i === 0 ? 0.55 : 0.22,
-                          width: i === 0 ? "50%" : (i === 9 ? "70%" : `${78 + ((i * 13) % 22)}%`),
-                        }} />
-                      ))}
-                      <div style={{ flex: 1 }} />
-                      <div className="mono" style={{ fontSize: 6, color: "var(--ink-4)", textAlign: "center" }}>{p.page}</div>
+                      <PdfPageThumb doc={pdfDoc} page={pageNum} />
+                      {active && (
+                        <div style={{
+                          position: "absolute", top: 6, right: 6,
+                          width: 20, height: 20, borderRadius: 999,
+                          background: "var(--accent)", color: "white",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        }}><Icons.Check size={12} /></div>
+                      )}
                     </div>
-                    {active && (
-                      <div style={{
-                        position: "absolute", top: 6, right: 6,
-                        width: 20, height: 20, borderRadius: 999,
-                        background: "var(--accent)", color: "white",
-                        display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      }}><Icons.Check size={12} /></div>
-                    )}
-                  </div>
-                  <div className="mono muted-2" style={{ marginTop: 6, fontSize: 10.5 }}>p. {p.page}</div>
-                </button>
-              );
-            })}
-          </div>
+                    <div className="mono muted-2" style={{ marginTop: 6, fontSize: 10.5 }}>p. {pageNum}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <PrimaryBtn variant="ghost" size="sm" onClick={() => coverFileInputRef.current?.click()}>
               Upload an image
@@ -245,7 +275,8 @@ function BookDetail({ bookId }) {
               style={{ display: "none" }}
               onChange={e => {
                 const f = e.target.files?.[0];
-                if (f) updateBook(book.id, { coverMode: "upload", coverFile: f.name });
+                e.target.value = "";
+                if (f) uploadCoverImage(f);
               }}
             />
           </div>

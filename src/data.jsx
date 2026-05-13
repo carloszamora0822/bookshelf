@@ -260,9 +260,4 @@ function getPageContent(book, pageNum) {
   return src[idx];
 }
 
-// Generate a thumbnail-strip series for upload cover-page picker (12 stand-in pages)
-function genThumbStrip(bookKey, count = 12) {
-  return Array.from({ length: count }, (_, i) => ({ page: i + 1 }));
-}
-
-Object.assign(window, { TAGS, BOOKS, COVERS, PAGES, getPageContent, genThumbStrip });
+Object.assign(window, { TAGS, BOOKS, COVERS, PAGES, getPageContent });

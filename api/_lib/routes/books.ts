@@ -23,7 +23,7 @@ const uploadUrlSchema = z.object({
 
 const createBookSchema = z.object({
   title: z.string().min(1).max(500),
-  author: z.string().max(500).optional(),
+  author: z.string().max(500).nullable().optional(),
   file_path: z.string().min(1),
   file_size_bytes: z.number().int().positive().optional(),
   tag_ids: z.array(z.string().uuid()).optional(),

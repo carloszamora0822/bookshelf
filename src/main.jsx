@@ -6,6 +6,7 @@ import "./api.js";
 
 import "./icons.jsx";
 import "./data.jsx";
+import "./pdfThumb.jsx";
 import "./covers.jsx";
 import "./components.jsx";
 import "./auth.jsx";
