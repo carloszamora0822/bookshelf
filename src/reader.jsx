@@ -239,10 +239,17 @@ function Reader({ bookId, startPage }) {
 function HorizontalPages({ doc, pageCount, page, setPage, desktop }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState({ w: 600, h: 800 });
-  const [drag, setDrag] = useState(0);
+
+  // Drag state lives in refs so we can update DOM transforms 60+ times a
+  // second without re-rendering React. Only `page` flips state.
   const startX = useRef(null);
+  const startT = useRef(0);
+  const lastT = useRef(0);
   const widthRef = useRef(0);
+  const dragRef = useRef(0);
   const animRef = useRef(null);
+  const animating = useRef(false);
+  const pageRefs = useRef({});
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -275,46 +282,102 @@ function HorizontalPages({ doc, pageCount, page, setPage, desktop }) {
   const left = (box.w - stageW) / 2;
   const top = padTop + (availH - stageH) / 2;
 
+  const GAP = 32;
+  const stride = stageW + GAP;
+
+  // Write the current drag into each rendered page's transform directly.
+  // Called from every mousemove frame and every animation frame.
+  const applyTransforms = useCallback(() => {
+    const d = dragRef.current;
+    for (const [p, el] of Object.entries(pageRefs.current)) {
+      if (!el) continue;
+      const offset = (Number(p) - page) * stride;
+      el.style.transform = `translate3d(${offset + d}px, 0, 0)`;
+    }
+  }, [page, stride]);
+
+  // When `page` changes externally (scrubber, keyboard) or after our own
+  // commit, re-apply transforms with drag = 0. This also rebases the
+  // newly-mounted page card to its correct offset on first paint.
+  useLayoutEffect(() => {
+    if (!animating.current && startX.current == null) dragRef.current = 0;
+    applyTransforms();
+  }, [applyTransforms]);
+
   const onDown = (e) => {
     cancelAnimationFrame(animRef.current);
-    startX.current = e.touches?.[0]?.clientX ?? e.clientX;
+    animating.current = false;
+    const x = e.touches?.[0]?.clientX ?? e.clientX;
+    startX.current = x;
+    const now = performance.now();
+    startT.current = now;
+    lastT.current = now;
   };
+
   const onMove = (e) => {
     if (startX.current == null) return;
     const x = e.touches?.[0]?.clientX ?? e.clientX;
-    const dx = x - startX.current;
+    let dx = x - startX.current;
     const stepP = isSpread ? 2 : 1;
+    // Rubber-band at the ends so the edge of the book feels different from
+    // a real page-turn.
     if ((page <= 1 && dx > 0) || (page + stepP - 1 >= pageCount && dx < 0)) {
-      setDrag(dx * 0.25);
-    } else {
-      setDrag(dx);
+      dx = dx * 0.25;
     }
+    dragRef.current = dx;
+    lastT.current = performance.now();
+    applyTransforms();
   };
+
   const onUp = () => {
     if (startX.current == null) return;
     const W = widthRef.current || 1;
-    const t = drag / W;
     const stepP = isSpread ? 2 : 1;
+
+    // Velocity in px/ms over the full swipe. A flick beats the position
+    // threshold so quick, short swipes still commit.
+    const swipeDur = Math.max(1, performance.now() - startT.current);
+    const vel = dragRef.current / swipeDur;
+    const t = dragRef.current / W;
+
     let target = page;
-    if (t < -0.18 && page + stepP - 1 < pageCount) target = page + stepP;
-    else if (t > 0.18 && page > 1) target = Math.max(1, page - stepP);
+    const advance = (t < -0.15 || vel < -0.5) && page + stepP - 1 < pageCount;
+    const recede = (t > 0.15 || vel > 0.5) && page > 1;
+    if (advance) target = page + stepP;
+    else if (recede) target = Math.max(1, page - stepP);
+
     startX.current = null;
-    const startDrag = drag;
-    const endDrag = target === page ? 0 : (target > page ? -W : W);
+    const startDrag = dragRef.current;
+    // Land at exactly ±stride so the committed page sits at offset 0 with
+    // drag reset to 0 — no 32px jump-on-commit glitch.
+    const endDrag = target === page ? 0 : (target > page ? -stride : stride);
     const t0 = performance.now();
-    const dur = 240;
+    const dur = target === page ? 160 : 200;
+    animating.current = true;
+
     const step = (now) => {
       const u = Math.min(1, (now - t0) / dur);
-      const e = 1 - Math.pow(1 - u, 3);
-      setDrag(startDrag + (endDrag - startDrag) * e);
-      if (u < 1) animRef.current = requestAnimationFrame(step);
-      else {
-        if (target !== page) setPage(target);
-        setDrag(0);
+      // ease-out-quart — quicker start, decisive settle
+      const e = 1 - Math.pow(1 - u, 4);
+      dragRef.current = startDrag + (endDrag - startDrag) * e;
+      applyTransforms();
+      if (u < 1) {
+        animRef.current = requestAnimationFrame(step);
+      } else {
+        animating.current = false;
+        if (target !== page) {
+          dragRef.current = 0;
+          setPage(target);
+        } else {
+          dragRef.current = 0;
+          applyTransforms();
+        }
       }
     };
     animRef.current = requestAnimationFrame(step);
   };
+
+  const onLeave = () => { if (startX.current != null) onUp(); };
 
   // Render window of pages
   const visiblePages = isSpread
@@ -326,23 +389,34 @@ function HorizontalPages({ doc, pageCount, page, setPage, desktop }) {
       ref={wrapRef}
       data-pagetap="1"
       onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
-      onMouseLeave={() => startX.current != null && onUp()}
+      onMouseLeave={onLeave}
       onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
-      style={{ position: "absolute", inset: 0, overflow: "hidden", touchAction: "pan-y", cursor: drag !== 0 ? "grabbing" : "grab" }}
+      style={{
+        position: "absolute", inset: 0, overflow: "hidden",
+        touchAction: "pan-y", cursor: "grab", userSelect: "none",
+      }}
     >
       {visiblePages.map(p => {
         if (p < 1 || p > pageCount) return null;
-        const offset = (p - page) * (stageW + 32);
+        const offset = (p - page) * stride;
         return (
-          <div key={p} data-pagetap="1" style={{
-            position: "absolute",
-            top, left,
-            width: stageW, height: stageH,
-            transform: `translateX(calc(${offset}px + ${drag}px))`,
-            willChange: "transform",
-            display: "flex",
-            gap: isSpread ? 16 : 0,
-          }}>
+          <div
+            key={p}
+            ref={el => {
+              if (el) pageRefs.current[p] = el;
+              else delete pageRefs.current[p];
+            }}
+            data-pagetap="1"
+            style={{
+              position: "absolute",
+              top, left,
+              width: stageW, height: stageH,
+              transform: `translate3d(${offset + dragRef.current}px, 0, 0)`,
+              willChange: "transform",
+              display: "flex",
+              gap: isSpread ? 16 : 0,
+            }}
+          >
             <div data-pagetap="1" style={{ width: pageW, height: pageH }}>
               <PdfPage doc={doc} pageNum={p} />
             </div>
@@ -424,7 +498,7 @@ function VerticalPages({ doc, pageCount, page, setPage, desktop }) {
 
 // ─────────────── A rendered PDF page ───────────────
 
-function PdfPage({ doc, pageNum }) {
+const PdfPage = React.memo(function PdfPage({ doc, pageNum }) {
   return (
     <div className="reader-page-card" data-pagetap="1" style={{
       width: "100%", height: "100%",
@@ -434,7 +508,7 @@ function PdfPage({ doc, pageNum }) {
       <PdfPageThumb doc={doc} page={pageNum} ratio={null} eager />
     </div>
   );
-}
+});
 
 function ReaderLoading({ message }) {
   return (

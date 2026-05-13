@@ -113,7 +113,7 @@ async function renderPdfPageToBlob(doc, pageNum, opts = {}) {
 //        if null, the wrapper takes full width AND full height of its parent
 //        (good for the reader, which sets its own page dimensions).
 // eager: skip IntersectionObserver and render immediately (reader pages).
-function PdfPageThumb({ doc, page, ratio = 2 / 3, eager = false }) {
+const PdfPageThumb = React.memo(function PdfPageThumb({ doc, page, ratio = 2 / 3, eager = false }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const [visible, setVisible] = useState(eager);
@@ -217,6 +217,6 @@ function PdfPageThumb({ doc, page, ratio = 2 / 3, eager = false }) {
       />
     </div>
   );
-}
+});
 
 Object.assign(window, { usePdfDoc, PdfPageThumb, loadPdfDoc, renderPdfPageToBlob });
