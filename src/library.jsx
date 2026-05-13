@@ -1,9 +1,9 @@
-// Library screen — Continue reading carousel + grid/list of books
+// Library — search, filter, sort, continue-reading rail, grid/list
 
 function Library() {
   const app = useApp();
-  const { books, tags, library, setLibrary, openBook, openUpload, openSettings, openLongPress, viewportClass } = app;
-  const isTablet = viewportClass === "tablet";
+  const { books, tags, library, setLibrary, openBook, openUpload, openSettings, openLongPress } = app;
+  const desktop = useMediaQuery("(min-width: 900px)");
 
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -12,252 +12,217 @@ function Library() {
     if (library.tagFilter) list = list.filter(b => b.tagIds.includes(library.tagFilter));
     if (library.q) {
       const q = library.q.toLowerCase();
-      list = list.filter(b => b.title.toLowerCase().includes(q) || (b.author || "").toLowerCase().includes(q));
+      list = list.filter(b =>
+        b.title.toLowerCase().includes(q) ||
+        (b.author || "").toLowerCase().includes(q)
+      );
     }
     const sorted = [...list];
-    if (library.sort === "recent")  sorted.sort((a, b) => (b.lastOpenedAt || "") .localeCompare(a.lastOpenedAt || ""));
-    if (library.sort === "added")   sorted.sort((a, b) => (b.addedAt).localeCompare(a.addedAt));
+    if (library.sort === "recent")  sorted.sort((a, b) => (b.lastOpenedAt || "").localeCompare(a.lastOpenedAt || ""));
+    if (library.sort === "added")   sorted.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
     if (library.sort === "title")   sorted.sort((a, b) => a.title.localeCompare(b.title));
-    if (library.sort === "author")  sorted.sort((a, b) => (a.author||"").localeCompare(b.author||""));
+    if (library.sort === "author")  sorted.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
     return sorted;
   }, [books, library]);
 
   const continueList = useMemo(
     () => books.filter(b => b.lastOpenedAt)
       .sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt))
-      .slice(0, 5),
+      .slice(0, 6),
     [books]
   );
 
   const tagById = (id) => tags.find(t => t.id === id);
 
+  const sortLabel = {
+    recent: "Recently opened",
+    added:  "Recently added",
+    title:  "Title",
+    author: "Author",
+  }[library.sort];
+
   return (
-    <div style={{
-      height: "100%", display: "flex", flexDirection: "column",
-      background: "var(--bg)",
-    }}>
-      {/* App header */}
-      <div style={{
-        padding: isTablet ? "20px 36px 0" : "12px 22px 0",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-      }}>
-        <div style={{
-          fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600,
-          letterSpacing: "0.28em", color: "var(--ink-3)",
-        }}>MYBOOKS</div>
-        <div style={{ display: "flex", gap: 4 }}>
-          <IconButton icon={Icons.Search} label="search" size={18} padding={8} onClick={() => {}} />
-          <IconButton icon={Icons.Settings} label="settings" size={18} padding={8} onClick={openSettings} />
+    <div className="page-container">
+      {/* Mobile top bar — only on mobile (rail handles desktop) */}
+      {!desktop && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <span className="rail-brand" style={{ padding: 0 }}>
+            <span className="mark" style={{ fontSize: 22 }}>Book<em>shelf</em></span>
+          </span>
+          <IconButton icon={Icons.Settings} label="settings" onClick={openSettings} />
         </div>
-      </div>
+      )}
 
-      {/* Scroll body */}
-      <div style={{ flex: 1, overflow: "auto", paddingBottom: 24, position: "relative" }}>
-        {/* Title */}
-        <div style={{
-          padding: isTablet ? "14px 36px 4px" : "8px 22px 2px",
-        }}>
-          <h1 style={{
-            margin: 0, fontFamily: "var(--serif)", fontWeight: 500,
-            fontSize: isTablet ? 40 : 30,
-            letterSpacing: "-0.025em", color: "var(--ink)",
-          }}>Your library</h1>
-          <div style={{ marginTop: 4, color: "var(--ink-3)", fontSize: 13 }}>
-            {books.length} books · {tags.length} tags
+      {/* Hero header */}
+      <header className="library-head fade-up">
+        <div>
+          <div className="eyebrow">Your library</div>
+          <h1 className="display-1" style={{ marginTop: 6 }}>
+            {greeting()},<br />
+            <em style={{ fontStyle: "italic", color: "var(--accent)", fontVariationSettings: '"opsz" 96, "SOFT" 100' }}>
+              keep reading.
+            </em>
+          </h1>
+          <div className="muted" style={{ marginTop: 10, fontSize: 14 }}>
+            {books.length} books · {tags.length} tags · {totalPages(books).toLocaleString()} pages collected
           </div>
         </div>
+      </header>
 
-        {/* Search row */}
-        <div style={{
-          padding: isTablet ? "20px 36px 0" : "16px 22px 0",
-          display: "flex", gap: 10, alignItems: "center",
-        }}>
-          <SearchField value={library.q} onChange={q => setLibrary(l => ({ ...l, q }))} />
-        </div>
-
-        {/* Continue reading */}
-        {continueList.length > 0 && (
-          <ContinueReading books={continueList} isTablet={isTablet} onOpen={openBook} />
-        )}
-
-        {/* Library section */}
-        <div style={{ padding: isTablet ? "8px 36px 0" : "8px 22px 0" }}>
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            margin: "10px 0 14px",
-          }}>
-            <h2 style={{
-              margin: 0, fontFamily: "var(--serif)", fontSize: isTablet ? 24 : 20,
-              fontWeight: 500, letterSpacing: "-0.012em", color: "var(--ink)",
-              whiteSpace: "nowrap",
-            }}>All books</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", position: "relative" }}>
-              <Segmented
-                value={library.view}
-                onChange={v => setLibrary(l => ({ ...l, view: v }))}
-                options={[
-                  { value: "grid", label: "Grid", icon: Icons.Grid },
-                  { value: "list", label: "List", icon: Icons.List },
-                ]}
-              />
-              <div style={{ position: "relative" }}>
-                <IconButton icon={Icons.Sort} label="sort" size={16} padding={9} onClick={() => setMenuOpen(o => !o)} />
-                <Menu open={menuOpen} onClose={() => setMenuOpen(false)} anchor="right">
-                  {[
-                    { v: "recent", label: "Recently opened" },
-                    { v: "added",  label: "Recently added" },
-                    { v: "title",  label: "Title" },
-                    { v: "author", label: "Author" },
-                  ].map(o => (
-                    <MenuItem key={o.v} label={o.label} active={library.sort === o.v}
-                      onClick={() => { setLibrary(l => ({ ...l, sort: o.v })); setMenuOpen(false); }} />
-                  ))}
-                </Menu>
-              </div>
-            </div>
-          </div>
-
-          {/* Tag filter chips */}
-          <div style={{ display: "flex", gap: 7, marginBottom: 18, overflowX: "auto", paddingBottom: 2 }}>
-            <FilterChip label="All" active={!library.tagFilter} onClick={() => setLibrary(l => ({ ...l, tagFilter: null }))} count={books.length} />
-            {tags.map(t => {
-              const n = books.filter(b => b.tagIds.includes(t.id)).length;
-              if (!n) return null;
-              return (
-                <FilterChip
-                  key={t.id}
-                  label={t.name}
-                  color={t.color}
-                  active={library.tagFilter === t.id}
-                  count={n}
-                  onClick={() => setLibrary(l => ({ ...l, tagFilter: l.tagFilter === t.id ? null : t.id }))}
-                />
-              );
-            })}
-          </div>
-
-          {/* Body — grid or list */}
-          {library.view === "grid"
-            ? <BookGrid books={filtered} isTablet={isTablet} onOpen={openBook} onLongPress={openLongPress} />
-            : <BookList books={filtered} tagById={tagById} onOpen={openBook} onLongPress={openLongPress} />
-          }
-
-          {filtered.length === 0 && (
-            <EmptyState onUpload={openUpload} />
-          )}
-        </div>
-      </div>
-
-      <FAB onClick={openUpload} label="upload book" />
-    </div>
-  );
-}
-
-// ───────────────────── Continue reading carousel ─────────────────────
-
-function ContinueReading({ books, isTablet, onOpen }) {
-  const cw = isTablet ? 168 : 138;
-  const ch = Math.round(cw * 1.5);
-  return (
-    <div style={{ marginTop: 22 }}>
-      <div style={{
-        padding: isTablet ? "0 36px" : "0 22px",
-        display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12,
-      }}>
-        <h2 style={{
-          margin: 0, fontFamily: "var(--serif)", fontSize: isTablet ? 24 : 20,
-          fontWeight: 500, letterSpacing: "-0.012em", color: "var(--ink)",
-          whiteSpace: "nowrap",
-        }}>Continue reading</h2>
-        <span style={{ fontSize: 11, color: "var(--ink-4)", fontFamily: "var(--mono)", letterSpacing: "0.04em" }}>
-          {books.length} active
-        </span>
-      </div>
-      <div style={{
-        display: "flex", gap: isTablet ? 22 : 16,
-        overflowX: "auto",
-        padding: isTablet ? "0 36px 6px" : "0 22px 6px",
-        scrollSnapType: "x mandatory",
-      }}>
-        {books.map(b => (
-          <button key={b.id} onClick={() => onOpen(b.id)} style={{
-            flexShrink: 0, width: cw, textAlign: "left", scrollSnapAlign: "start",
-            cursor: "pointer",
-          }}>
-            <CoverWithIndicator book={b} w={cw} h={ch} />
-            <div style={{ marginTop: 10 }}>
-              <div style={{
-                fontFamily: "var(--serif)", fontSize: 14, fontWeight: 500,
-                color: "var(--ink)", lineHeight: 1.25, letterSpacing: "-0.01em",
-                overflow: "hidden", display: "-webkit-box",
-                WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-                textWrap: "pretty",
-              }}>{b.title}</div>
-              <div style={{ marginTop: 3, color: "var(--ink-3)", fontSize: 11, letterSpacing: "0.005em" }}>
-                {b.author}
-              </div>
-              <div style={{ marginTop: 6, color: "var(--ink-4)", fontSize: 10.5, fontFamily: "var(--mono)" }}>
-                page {b.lastOpenedPage} of {b.pageCount}
-              </div>
-            </div>
+      <div className="library-toolbar fade-up delay-1">
+        <SearchField value={library.q} onChange={q => setLibrary(l => ({ ...l, q }))} />
+        <Segmented
+          value={library.view}
+          onChange={v => setLibrary(l => ({ ...l, view: v }))}
+          options={[
+            { value: "grid", label: "Grid", icon: Icons.Grid },
+            { value: "list", label: "List", icon: Icons.List },
+          ]}
+        />
+        <div style={{ position: "relative" }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setMenuOpen(o => !o)}>
+            <Icons.Sort size={14} />
+            <span>{sortLabel}</span>
+            <Icons.ChevDown size={12} />
           </button>
-        ))}
+          <Menu open={menuOpen} onClose={() => setMenuOpen(false)} anchor="right">
+            {[
+              { v: "recent", label: "Recently opened" },
+              { v: "added",  label: "Recently added" },
+              { v: "title",  label: "Title" },
+              { v: "author", label: "Author" },
+            ].map(o => (
+              <MenuItem
+                key={o.v}
+                label={o.label}
+                active={library.sort === o.v}
+                onClick={() => { setLibrary(l => ({ ...l, sort: o.v })); setMenuOpen(false); }}
+              />
+            ))}
+          </Menu>
+        </div>
       </div>
+
+      {/* Tag filter strip */}
+      <div className="tag-strip fade-up delay-2">
+        <FilterChip label="All" active={!library.tagFilter} count={books.length}
+          onClick={() => setLibrary(l => ({ ...l, tagFilter: null }))} />
+        {tags.map(t => {
+          const n = books.filter(b => b.tagIds.includes(t.id)).length;
+          if (!n) return null;
+          return (
+            <FilterChip
+              key={t.id}
+              label={t.name}
+              color={t.color}
+              active={library.tagFilter === t.id}
+              count={n}
+              onClick={() => setLibrary(l => ({ ...l, tagFilter: l.tagFilter === t.id ? null : t.id }))}
+            />
+          );
+        })}
+      </div>
+
+      {/* Continue reading */}
+      {continueList.length > 0 && (
+        <section className="fade-up delay-3">
+          <div className="section-head">
+            <h2>Continue <em>reading</em></h2>
+            <span className="mono muted-2" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
+              {continueList.length} active
+            </span>
+          </div>
+          <div className="continue-rail">
+            {continueList.map(b => <ContinueTile key={b.id} book={b} onOpen={openBook} />)}
+          </div>
+        </section>
+      )}
+
+      {/* All books */}
+      <section className="fade-up delay-4">
+        <div className="section-head">
+          <h2>All <em>books</em></h2>
+          <span className="mono muted-2" style={{ fontSize: 11, letterSpacing: "0.06em" }}>
+            {filtered.length} of {books.length}
+          </span>
+        </div>
+
+        {library.view === "grid"
+          ? <BookGrid books={filtered} onOpen={openBook} onLongPress={openLongPress} />
+          : <BookList books={filtered} tagById={tagById} onOpen={openBook} onLongPress={openLongPress} />
+        }
+
+        {filtered.length === 0 && <EmptyState onUpload={openUpload} q={library.q} />}
+      </section>
+
+      <FAB icon={Icons.Plus} label="upload book" onClick={openUpload} />
     </div>
   );
 }
 
-// ───────────────────── Grid & List ─────────────────────
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5)  return "Good night";
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
 
-function BookGrid({ books, isTablet, onOpen, onLongPress }) {
-  const minCol = isTablet ? 150 : 118;
+function totalPages(books) {
+  return books.reduce((n, b) => n + (b.pageCount || 0), 0);
+}
+
+// ───────────────────── Continue reading tile ─────────────────────
+
+function ContinueTile({ book, onOpen }) {
+  const pct = book.lastOpenedPage && book.pageCount
+    ? Math.max(0.02, Math.min(1, book.lastOpenedPage / book.pageCount))
+    : 0;
   return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: `repeat(auto-fill, minmax(${minCol}px, 1fr))`,
-      gap: isTablet ? "26px 22px" : "22px 14px",
-    }}>
+    <button className="card-tile book-tile" onClick={() => onOpen(book.id)}>
+      <div className="cover">
+        <CoverArt book={book} />
+        {pct > 0 && (
+          <div className="progress"><span style={{ width: `${pct * 100}%` }} /></div>
+        )}
+      </div>
+      <div className="meta">
+        <div className="title">{book.title}</div>
+        <div className="author">{book.author}</div>
+        <div className="page-line">p. {book.lastOpenedPage} / {book.pageCount}</div>
+      </div>
+    </button>
+  );
+}
+
+// ───────────────────── Grid + list ─────────────────────
+
+function BookGrid({ books, onOpen, onLongPress }) {
+  return (
+    <div className="book-grid">
       {books.map(b => <GridCard key={b.id} book={b} onOpen={onOpen} onLongPress={onLongPress} />)}
     </div>
   );
 }
 
 function GridCard({ book, onOpen, onLongPress }) {
-  const ref = useRef(null);
   const timer = useRef(null);
-  const onDown = () => { timer.current = setTimeout(() => onLongPress?.(book.id), 500); };
-  const onUp = () => { clearTimeout(timer.current); };
-  // measure container width to size cover
-  const [w, setW] = useState(120);
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver(entries => {
-      const cw = entries[0].contentRect.width;
-      setW(cw);
-    });
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, []);
-  const h = Math.round(w * 1.5);
-
+  const onDown = () => { timer.current = setTimeout(() => onLongPress?.(book.id), 480); };
+  const cancel = () => clearTimeout(timer.current);
   return (
-    <button ref={ref}
+    <button
+      className="book-tile"
       onClick={() => onOpen(book.id)}
-      onMouseDown={onDown} onMouseUp={onUp} onMouseLeave={onUp}
-      onTouchStart={onDown} onTouchEnd={onUp}
-      style={{ textAlign: "left", cursor: "pointer", width: "100%" }}
+      onMouseDown={onDown} onMouseUp={cancel} onMouseLeave={cancel}
+      onTouchStart={onDown} onTouchEnd={cancel}
+      onContextMenu={(e) => { e.preventDefault(); onLongPress?.(book.id); }}
     >
-      <CoverArt book={book} w={w} h={h} radius={3} />
-      <div style={{ marginTop: 10 }}>
-        <div style={{
-          fontFamily: "var(--serif)", fontSize: 14, fontWeight: 500,
-          color: "var(--ink)", lineHeight: 1.25, letterSpacing: "-0.005em",
-          overflow: "hidden", display: "-webkit-box",
-          WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
-        }}>{book.title}</div>
-        <div style={{ marginTop: 3, color: "var(--ink-3)", fontSize: 11 }}>
-          {book.author}
-        </div>
+      <div className="cover">
+        <CoverArt book={book} />
+      </div>
+      <div className="meta">
+        <div className="title">{book.title}</div>
+        <div className="author">{book.author}</div>
       </div>
     </button>
   );
@@ -265,33 +230,31 @@ function GridCard({ book, onOpen, onLongPress }) {
 
 function BookList({ books, tagById, onOpen, onLongPress }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden", background: "var(--bg-elev)" }}>
-      {books.map((b, i) => (
-        <button key={b.id} onClick={() => onOpen(b.id)} style={{
-          display: "flex", alignItems: "center", gap: 14, padding: "14px 14px",
-          textAlign: "left", cursor: "pointer",
-          borderBottom: i === books.length - 1 ? "none" : "1px solid var(--line-2)",
-        }}>
-          <div style={{ flexShrink: 0 }}>
-            <CoverArt book={b} w={46} h={68} radius={2} shadow={false} />
+    <div className="book-list">
+      {books.map(b => (
+        <button key={b.id} className="book-row" onClick={() => onOpen(b.id)}>
+          <div className="cover-thumb">
+            <CoverArt book={b} />
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontFamily: "var(--serif)", fontSize: 15.5, fontWeight: 500,
-              color: "var(--ink)", lineHeight: 1.25, letterSpacing: "-0.01em",
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>{b.title}</div>
-            <div style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 12 }}>
-              {b.author} · <span style={{ fontFamily: "var(--mono)", fontSize: 10.5 }}>{b.pageCount}pp</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="title">{b.title}</div>
+            <div className="author">
+              {b.author} <span className="mono muted-2" style={{ fontSize: 11 }}>· {b.pageCount}pp</span>
             </div>
-            <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
+            <div className="tags">
               {b.tagIds.slice(0, 3).map(id => {
-                const t = tagById(id); if (!t) return null;
-                return <TagPill key={id} tag={t} size="sm" />;
+                const t = tagById(id);
+                return t ? <TagPill key={id} tag={t} size="sm" /> : null;
               })}
             </div>
           </div>
-          <IconButton icon={Icons.More} label="more" size={16} padding={8} onClick={e => { e.stopPropagation(); onLongPress?.(b.id); }} />
+          <IconButton
+            icon={Icons.More}
+            label="more"
+            size={16}
+            onClick={(e) => { e.stopPropagation(); onLongPress?.(b.id); }}
+            className="icon-btn-sm"
+          />
         </button>
       ))}
     </div>
@@ -300,66 +263,66 @@ function BookList({ books, tagById, onOpen, onLongPress }) {
 
 function FilterChip({ label, count, active, color, onClick }) {
   return (
-    <button onClick={onClick} style={{
-      flexShrink: 0,
-      display: "inline-flex", alignItems: "center", gap: 7,
-      padding: "7px 13px",
-      borderRadius: 999,
-      background: active ? "var(--ink)" : "var(--bg-elev)",
-      color: active ? "var(--bg)" : "var(--ink-2)",
-      border: `1px solid ${active ? "var(--ink)" : "var(--line)"}`,
-      fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500,
-      letterSpacing: "0.005em",
-      transition: "background 150ms, color 150ms, border-color 150ms",
-      cursor: "pointer",
-    }}>
-      {color && <span style={{ width: 6, height: 6, borderRadius: 999, background: color }} />}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`pill ${active ? "is-active" : ""}`}
+      style={{ flexShrink: 0 }}
+    >
+      {color && <span className="dot" style={{ background: color }} />}
       {label}
-      <span style={{ opacity: 0.55, fontSize: 10.5, fontFamily: "var(--mono)" }}>{count}</span>
+      <span className="count">{count}</span>
     </button>
   );
 }
 
-function EmptyState({ onUpload }) {
+function EmptyState({ onUpload, q }) {
   return (
-    <div style={{
-      padding: 40, textAlign: "center",
-      border: "1px dashed var(--line)", borderRadius: 16,
-      marginTop: 16,
-    }}>
-      <div style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--ink)" }}>No books here yet</div>
-      <div style={{ color: "var(--ink-3)", fontSize: 13, margin: "6px 0 14px" }}>
-        Bring your PDFs over and we'll set them up for reading.
+    <div className="empty">
+      <div className="title">
+        {q ? "Nothing matched" : "No books here yet"}
       </div>
-      <PrimaryBtn leadIcon={Icons.Upload} onClick={onUpload}>Upload your first book</PrimaryBtn>
+      <div className="desc">
+        {q
+          ? <>No results for <em style={{ fontStyle: "italic" }}>"{q}"</em>. Try another search.</>
+          : "Bring your PDFs over and we'll set them up for reading."}
+      </div>
+      {!q && <PrimaryBtn variant="accent" leadIcon={Icons.Upload} onClick={onUpload}>Upload your first book</PrimaryBtn>}
     </div>
   );
 }
 
-// ───────────────────── Long-press menu ─────────────────────
+// ───────────────────── Long-press / context menu ─────────────────────
 
 function LongPressMenu({ bookId, onClose }) {
   const app = useApp();
   const book = app.books.find(b => b.id === bookId);
   if (!book) return null;
   return (
-    <BottomSheet open={!!bookId} onClose={onClose} title={null} padded={false}>
-      <div style={{ padding: "14px 16px 8px", display: "flex", gap: 14, alignItems: "center" }}>
-        <CoverArt book={book} w={48} h={72} radius={3} shadow={false} />
-        <div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 17, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+    <BottomSheet open={!!bookId} onClose={onClose} title={book.title}>
+      <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 18 }}>
+        <div style={{ width: 64, aspectRatio: "2/3", flexShrink: 0, boxShadow: "var(--shadow-md)", borderRadius: 3, overflow: "hidden" }}>
+          <CoverArt book={book} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "var(--display)", fontSize: 18, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.01em" }}>
             {book.title}
           </div>
-          <div style={{ color: "var(--ink-3)", fontSize: 12, marginTop: 2 }}>{book.author}</div>
+          <div className="serif italic muted" style={{ marginTop: 2, fontSize: 13 }}>{book.author}</div>
         </div>
       </div>
-      <div style={{ padding: "6px 8px 18px" }}>
-        <MenuItem icon={Icons.BookOpen} label={book.lastOpenedPage ? `Continue from page ${book.lastOpenedPage}` : "Start reading"} onClick={() => { onClose(); app.openReader(book.id); }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+        <MenuItem
+          icon={Icons.BookOpen}
+          label={book.lastOpenedPage ? `Continue from page ${book.lastOpenedPage}` : "Start reading"}
+          onClick={() => { onClose(); app.openReader(book.id); }}
+        />
         <MenuItem icon={Icons.Play} label="Start from beginning" onClick={() => { onClose(); app.openReader(book.id, 1); }} />
         <MenuItem icon={Icons.Pencil} label="Edit details" onClick={() => { onClose(); app.openBook(book.id); }} />
         <MenuItem icon={Icons.Tag} label="Manage tags" onClick={() => { onClose(); app.openBook(book.id); }} />
         <MenuItem icon={Icons.Image} label="Change cover" onClick={() => { onClose(); app.openBook(book.id); }} />
-        <MenuItem icon={Icons.Trash} label="Delete book" danger onClick={onClose} />
+        <div className="menu-divider" />
+        <MenuItem icon={Icons.Trash} label="Delete book" danger onClick={() => { app.deleteBook(book.id); }} />
       </div>
     </BottomSheet>
   );

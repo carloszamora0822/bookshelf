@@ -1,100 +1,107 @@
-// Settings screen — Account, Reading, About
+// Settings — Account, Reading, Library, About
 
 function Settings() {
   const app = useApp();
-  const isTablet = app.viewportClass === "tablet";
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: isTablet ? "16px 32px 8px" : "10px 18px 6px",
-      }}>
-        <IconButton icon={Icons.ArrowLeft} label="back" size={20} padding={9} onClick={app.goBack} />
-        <div style={{ fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600, letterSpacing: "0.28em", color: "var(--ink-3)" }}>SETTINGS</div>
-        <div style={{ width: 38 }} />
+    <div className="page-container">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <button className="btn btn-ghost btn-sm" onClick={app.goBack}>
+          <Icons.ArrowLeft size={14} />
+          <span>Back</span>
+        </button>
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: isTablet ? "16px 32px 40px" : "12px 22px 40px" }}>
-        <h1 style={{
-          margin: 0, fontFamily: "var(--serif)", fontWeight: 500,
-          fontSize: isTablet ? 36 : 28, letterSpacing: "-0.025em",
-        }}>Settings</h1>
-
-        <Section title="Account">
-          <Row label="Email"><span style={{ color: "var(--ink-2)" }}>you@example.com</span></Row>
-          <Row label="Display name"><span style={{ color: "var(--ink-2)" }}>—</span></Row>
-          <Row label="" last>
-            <PrimaryBtn variant="ghost" leadIcon={Icons.LogOut}>Sign out</PrimaryBtn>
-          </Row>
-        </Section>
-
-        <Section title="Reading">
-          <Row label="Theme">
-            <Segmented value={app.prefs.theme} onChange={(t) => app.setPrefs({ theme: t })}
-              options={[
-                { value: "system", label: "System" },
-                { value: "light",  label: "Light", icon: Icons.Sun },
-                { value: "dark",   label: "Dark",  icon: Icons.Moon },
-              ]} />
-          </Row>
-          <Row label="Default page mode" last>
-            <Segmented value={app.prefs.defaultPageMode} onChange={(m) => app.setPrefs({ defaultPageMode: m })}
-              options={[
-                { value: "horizontal", label: "Swipe", icon: Icons.PageMode },
-                { value: "vertical",   label: "Scroll", icon: Icons.Scroll },
-              ]} />
-          </Row>
-        </Section>
-
-        <Section title="Library">
-          <Row label="Books">{app.books.length}</Row>
-          <Row label="Tags">{app.tags.length}</Row>
-          <Row label="Storage used" last><span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-2)" }}>7.7 MB / 5 GB</span></Row>
-        </Section>
-
-        <Section title="About">
-          <Row label="Version"><span style={{ fontFamily: "var(--mono)", fontSize: 12 }}>0.1.0</span></Row>
-          <Row label="Support"><span style={{ color: "var(--accent-ink)" }}>support@mybooks.app</span></Row>
-          <Row label="" last>
-            <span style={{ fontSize: 12, color: "var(--ink-4)", fontStyle: "italic", textWrap: "pretty" }}>
-              A calm place for the PDFs you actually intend to read.
-            </span>
-          </Row>
-        </Section>
+      <div className="fade-up">
+        <div className="eyebrow">Settings</div>
+        <h1 className="display-1" style={{ marginTop: 6 }}>
+          Make it <em style={{ fontStyle: "italic", color: "var(--accent)" }}>yours</em>.
+        </h1>
+        <div className="muted" style={{ marginTop: 8, fontSize: 14 }}>
+          The small preferences that make this a calm place to read.
+        </div>
       </div>
+
+      <SettingsSection title="Account" delay={1}>
+        <SettingsRow label="Email">
+          <span className="muted">adanzamora2005@gmail.com</span>
+        </SettingsRow>
+        <SettingsRow label="Display name">
+          <span className="muted">—</span>
+        </SettingsRow>
+        <SettingsRow label="">
+          <PrimaryBtn variant="ghost" leadIcon={Icons.LogOut}>Sign out</PrimaryBtn>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="Reading" delay={2}>
+        <SettingsRow label="Theme">
+          <Segmented
+            value={app.prefs.theme}
+            onChange={(t) => app.setPrefs({ theme: t })}
+            options={[
+              { value: "system", label: "System" },
+              { value: "light",  label: "Light", icon: Icons.Sun },
+              { value: "dark",   label: "Dark",  icon: Icons.Moon },
+            ]}
+          />
+        </SettingsRow>
+        <SettingsRow label="Default page mode">
+          <Segmented
+            value={app.prefs.defaultPageMode}
+            onChange={(m) => app.setPrefs({ defaultPageMode: m })}
+            options={[
+              { value: "horizontal", label: "Swipe",  icon: Icons.PageMode },
+              { value: "vertical",   label: "Scroll", icon: Icons.Scroll },
+            ]}
+          />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="Library" delay={3}>
+        <SettingsRow label="Books">
+          <span className="mono">{app.books.length}</span>
+        </SettingsRow>
+        <SettingsRow label="Tags">
+          <span className="mono">{app.tags.length}</span>
+        </SettingsRow>
+        <SettingsRow label="Storage used">
+          <span className="mono muted">7.7 MB / 5 GB</span>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="About" delay={4}>
+        <SettingsRow label="Version">
+          <span className="mono">0.1.0</span>
+        </SettingsRow>
+        <SettingsRow label="Support">
+          <a href="mailto:support@bookshelf.app" style={{ color: "var(--accent-ink)", textDecoration: "none" }}>
+            support@bookshelf.app
+          </a>
+        </SettingsRow>
+        <SettingsRow label="">
+          <span style={{ fontStyle: "italic", color: "var(--ink-4)", fontFamily: "var(--serif)", fontSize: 14, textWrap: "pretty" }}>
+            A calm place for the PDFs you actually intend to read.
+          </span>
+        </SettingsRow>
+      </SettingsSection>
     </div>
   );
 }
 
-function Section({ title, children }) {
+function SettingsSection({ title, delay = 0, children }) {
   return (
-    <section style={{ marginTop: 28 }}>
-      <h2 style={{
-        margin: "0 0 10px",
-        fontFamily: "var(--sans)", fontSize: 11, fontWeight: 600,
-        letterSpacing: "0.18em", color: "var(--ink-3)",
-        textTransform: "uppercase",
-      }}>{title}</h2>
-      <div style={{
-        background: "var(--bg-elev)",
-        border: "1px solid var(--line)",
-        borderRadius: 14,
-        overflow: "hidden",
-      }}>{children}</div>
+    <section className={`settings-section fade-up delay-${delay}`}>
+      <div className="label">{title}</div>
+      <div className="settings-card">{children}</div>
     </section>
   );
 }
 
-function Row({ label, children, last }) {
+function SettingsRow({ label, children }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      gap: 12, padding: "13px 16px",
-      borderBottom: last ? "none" : "1px solid var(--line-2)",
-      minHeight: 50,
-    }}>
-      <div style={{ fontFamily: "var(--sans)", fontSize: 13.5, color: "var(--ink)", fontWeight: 450 }}>{label}</div>
+    <div className="settings-row">
+      <div className="row-label">{label}</div>
       <div style={{ display: "flex", alignItems: "center" }}>{children}</div>
     </div>
   );

@@ -1,10 +1,10 @@
+import "./styles.css";
 import "./shim.jsx";
 
 import "./icons.jsx";
 import "./data.jsx";
 import "./covers.jsx";
 import "./components.jsx";
-import "./tweaks-panel.jsx";
 import "./settings.jsx";
 import "./frame.jsx";
 import "./library.jsx";

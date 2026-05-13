@@ -1,113 +1,100 @@
-// Outer stage chrome + device sizer
+// Responsive app shell — nav rail (desktop) + bottom nav (mobile)
 
-function Stage({ deviceMode, setDeviceMode, theme, setTheme, children }) {
-  const stageRef = useRef(null);
-  const [stage, setStage] = useState({ w: 1200, h: 800 });
-
+function useMediaQuery(query) {
+  const get = () => typeof window !== "undefined" && window.matchMedia(query).matches;
+  const [m, setM] = useState(get);
   useEffect(() => {
-    if (!stageRef.current) return;
-    const ro = new ResizeObserver(entries => {
-      const r = entries[0].contentRect;
-      setStage({ w: r.width, h: r.height });
-    });
-    ro.observe(stageRef.current);
-    return () => ro.disconnect();
-  }, []);
+    const mq = window.matchMedia(query);
+    const on = () => setM(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.addEventListener && mq.removeEventListener("change", on);
+  }, [query]);
+  return m;
+}
 
-  // Device dimensions
-  const isTablet = deviceMode === "tablet";
-  const deviceTargetW = isTablet ? 820 : 390;
-  const deviceTargetH = isTablet ? 1180 : 844;
+function useViewport() {
+  const desktop = useMediaQuery("(min-width: 900px)");
+  const tablet  = useMediaQuery("(min-width: 600px) and (max-width: 899.98px)");
+  if (desktop) return "desktop";
+  if (tablet)  return "tablet";
+  return "mobile";
+}
 
-  // Fit available stage space
-  const pad = 28;
-  const availW = stage.w - pad * 2;
-  const availH = stage.h - pad * 2;
-  const scale = Math.min(1, availW / deviceTargetW, availH / deviceTargetH);
+function Stage({ children, route, push, goHome, openUpload, openSettings, theme, setTheme }) {
+  const vp = useViewport();
+
+  // Reader is full-bleed; hide nav rail + bottom nav when reading
+  const isReader = route?.name === "reader";
 
   return (
-    <div className="app-stage">
-      <ChromeBar
-        deviceMode={deviceMode} setDeviceMode={setDeviceMode}
-        theme={theme} setTheme={setTheme}
-      />
-      <div className="stage-body" ref={stageRef}>
-        <div
-          className={`device ${isTablet ? "tablet" : "phone"}`}
-          style={{
-            width: deviceTargetW,
-            height: deviceTargetH,
-            transform: `scale(${scale})`,
-            transformOrigin: "center center",
-          }}
-        >
-          <div className="device-bezel">
-            {!isTablet && <div className="notch" />}
-            <StatusBar isTablet={isTablet} />
-            <div className="app-area" data-screen-label={`MyBooks ${isTablet ? "tablet" : "phone"}`}>
-              {children}
-            </div>
-            <div className="home-indicator" />
-          </div>
-        </div>
+    <div className={`app-shell viewport-${vp}`}>
+      <div className="app-layout">
+        {!isReader && <NavRail route={route} goHome={goHome} openUpload={openUpload} openSettings={openSettings} theme={theme} setTheme={setTheme} />}
+        <main className="app-main">{children}</main>
+        {!isReader && <BottomNav route={route} goHome={goHome} openUpload={openUpload} openSettings={openSettings} />}
       </div>
     </div>
   );
 }
 
-function ChromeBar({ deviceMode, setDeviceMode, theme, setTheme }) {
+function NavRail({ route, goHome, openUpload, openSettings, theme, setTheme }) {
+  const active = route?.name === "library" || route?.name === "detail" ? "library"
+               : route?.name === "settings" ? "settings"
+               : "library";
+
   return (
-    <div className="stage-chrome">
-      <div className="brand">My<span>Books</span> <span style={{ marginLeft: 6, fontFamily: "var(--mono)", fontStyle: "normal", fontSize: 10, opacity: 0.55, letterSpacing: "0.08em" }}>v0.1</span></div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "#7A7770", letterSpacing: "0.08em" }}>VIEWPORT</span>
-        <div className="chrome-group">
-          <button className={`chrome-btn ${deviceMode === "phone" ? "active" : ""}`} onClick={() => setDeviceMode("phone")}>
-            <Icons.Phone size={13} />
-            <span>Phone</span>
-            <span className="px">390×844</span>
-          </button>
-          <button className={`chrome-btn ${deviceMode === "tablet" ? "active" : ""}`} onClick={() => setDeviceMode("tablet")}>
-            <Icons.Tablet size={13} />
-            <span>Tablet</span>
-            <span className="px">820×1180</span>
-          </button>
-        </div>
-
-        <div className="chrome-sep" />
-
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "#7A7770", letterSpacing: "0.08em" }}>THEME</span>
-        <div className="chrome-group">
-          <button className={`chrome-btn ${theme === "light" ? "active" : ""}`} onClick={() => setTheme("light")}>
-            <Icons.Sun size={13} />
-            <span>Light</span>
-          </button>
-          <button className={`chrome-btn ${theme === "dark" ? "active" : ""}`} onClick={() => setTheme("dark")}>
-            <Icons.Moon size={13} />
-            <span>Dark</span>
-          </button>
-        </div>
+    <aside className="rail">
+      <div className="rail-brand">
+        <span className="mark">Book<em>shelf</em></span>
+        <span className="ver">v0.1</span>
       </div>
-    </div>
+
+      <button className={`rail-item ${active === "library" ? "is-active" : ""}`} onClick={goHome}>
+        <Icons.Book size={17} />
+        <span>Library</span>
+      </button>
+
+      <button className="rail-item" onClick={openUpload}>
+        <Icons.Upload size={17} />
+        <span>Add a book</span>
+      </button>
+
+      <div className="rail-section">Account</div>
+
+      <button className={`rail-item ${active === "settings" ? "is-active" : ""}`} onClick={openSettings}>
+        <Icons.Settings size={17} />
+        <span>Settings</span>
+      </button>
+
+      <div className="rail-footer">
+        <button className="rail-item" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+          {theme === "dark" ? <Icons.Sun size={17} /> : <Icons.Moon size={17} />}
+          <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+        </button>
+      </div>
+    </aside>
   );
 }
 
-function StatusBar({ isTablet }) {
-  // Show time + simulated indicators
-  const [now] = useState(() => "9:41");
+function BottomNav({ route, goHome, openUpload, openSettings }) {
+  const isLib = route?.name === "library" || route?.name === "detail";
+  const isSet = route?.name === "settings";
   return (
-    <div className="statusbar">
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-        <span>{now}</span>
-      </div>
-      <div className="right" style={{ color: "var(--ink)" }}>
-        <Icons.Signal size={15} />
-        <Icons.Wifi size={15} />
-        <Icons.Battery size={26} />
-      </div>
-    </div>
+    <nav className="bottom-nav">
+      <button className={isLib ? "is-active" : ""} onClick={goHome}>
+        <Icons.Book size={20} />
+        <span>Library</span>
+      </button>
+      <button onClick={openUpload}>
+        <Icons.Upload size={20} />
+        <span>Add</span>
+      </button>
+      <button className={isSet ? "is-active" : ""} onClick={openSettings}>
+        <Icons.Settings size={20} />
+        <span>Settings</span>
+      </button>
+    </nav>
   );
 }
 
-Object.assign(window, { Stage });
+Object.assign(window, { Stage, useViewport, useMediaQuery });
