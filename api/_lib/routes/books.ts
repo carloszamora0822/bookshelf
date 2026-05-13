@@ -6,7 +6,10 @@ import {
   createSignedDownloadUrl,
   deleteFile,
   uploadBuffer,
+  downloadFile,
 } from "../services/storage.js";
+import { processBook, renderAndUploadCover } from "../services/extraction.js";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { Book, Tag } from "../types/index.js";
 import multer from "multer";
 
@@ -49,8 +52,11 @@ router.post("/upload-url", async (req: Request, res: Response) => {
       expires_at: result.expiresAt,
     });
   } catch (err) {
-    console.error("Upload URL error:", err);
-    res.status(500).json({ error: { code: "internal", message: "Failed to create upload URL" } });
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("Upload URL error:", detail);
+    res.status(500).json({
+      error: { code: "internal", message: "Failed to create upload URL", detail },
+    });
   }
 });
 
@@ -78,7 +84,9 @@ router.post("/", async (req: Request, res: Response) => {
 
   if (error) {
     console.error("Create book error:", error);
-    res.status(500).json({ error: { code: "internal", message: "Failed to create book" } });
+    res.status(500).json({
+      error: { code: "internal", message: "Failed to create book", detail: error.message },
+    });
     return;
   }
 
@@ -90,9 +98,9 @@ router.post("/", async (req: Request, res: Response) => {
     await supabase.from("book_tags").insert(tagRows);
   }
 
-  // Trigger extraction asynchronously
+  // Trigger extraction asynchronously (in-process on serverless — see helper)
   triggerExtraction(book.id).catch((err) =>
-    console.error("Extraction trigger failed:", err)
+    console.error("Extraction failed:", err instanceof Error ? err.message : err)
   );
 
   const bookWithTags = await getBookWithTags(book.id);
@@ -454,30 +462,27 @@ async function getBookWithTags(bookId: string): Promise<Book> {
   return { ...rest, tags, cover_url } as Book;
 }
 
+// Run extraction in-process. On Vercel there is no localhost worker to POST
+// to, so we just call the service directly. Fire-and-forget — caller does
+// not await, so the HTTP response returns before this finishes.
 async function triggerExtraction(bookId: string) {
-  const workerSecret = process.env.WORKER_SECRET;
-  const port = process.env.PORT || 3001;
-  await fetch(`http://localhost:${port}/internal/extraction/process`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Worker-Secret": workerSecret!,
-    },
-    body: JSON.stringify({ book_id: bookId }),
-  });
+  await processBook(bookId);
 }
 
 async function triggerCoverRender(bookId: string, page: number) {
-  const workerSecret = process.env.WORKER_SECRET;
-  const port = process.env.PORT || 3001;
-  await fetch(`http://localhost:${port}/internal/extraction/cover`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Worker-Secret": workerSecret!,
-    },
-    body: JSON.stringify({ book_id: bookId, page }),
-  });
+  const { data: book } = await supabase
+    .from("books")
+    .select("file_path, user_id")
+    .eq("id", bookId)
+    .single();
+  if (!book) return;
+  const pdfBuffer = await downloadFile(book.file_path);
+  const pdfDoc = await getDocument({ data: new Uint8Array(pdfBuffer) }).promise;
+  try {
+    await renderAndUploadCover(bookId, book.user_id, pdfDoc, page);
+  } finally {
+    pdfDoc.destroy();
+  }
 }
 
 export default router;

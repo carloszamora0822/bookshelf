@@ -168,16 +168,23 @@ export const books = {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", uploadUrl);
       xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      // Tell Supabase Storage it's OK to overwrite if the path already exists
+      // (it shouldn't, since we prefix with Date.now(), but covers retries cleanly).
+      xhr.setRequestHeader("x-upsert", "true");
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && typeof onProgress === "function") {
           onProgress(e.loaded / e.total);
         }
       };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`api.books.uploadFile: upload failed (${xhr.status})`));
+        if (xhr.status >= 200 && xhr.status < 300) return resolve();
+        const body = (xhr.responseText || "").slice(0, 400);
+        console.error(`[api] uploadFile → ${xhr.status}`, body);
+        reject(new Error(`api.books.uploadFile: ${xhr.status} ${body || xhr.statusText}`));
       };
-      xhr.onerror = () => reject(new Error("api.books.uploadFile: network error"));
+      xhr.onerror = () => reject(new Error(
+        "api.books.uploadFile: network error (check Supabase Storage CORS allows your origin)"
+      ));
       xhr.send(file);
     });
   },
