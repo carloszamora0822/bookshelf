@@ -12,13 +12,33 @@ import extractionRouter from "./routes/extraction.js";
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: (_origin, cb) => cb(null, true), // same-origin in prod via Vercel rewrites; reflective in dev
   credentials: true,
 }));
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    env: {
+      SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      SUPABASE_STORAGE_BUCKET: Boolean(process.env.SUPABASE_STORAGE_BUCKET),
+      WORKER_SECRET: Boolean(process.env.WORKER_SECRET),
+    },
+  });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    env: {
+      SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
+      SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      SUPABASE_STORAGE_BUCKET: Boolean(process.env.SUPABASE_STORAGE_BUCKET),
+      WORKER_SECRET: Boolean(process.env.WORKER_SECRET),
+    },
+  });
 });
 
 app.use("/internal/extraction", extractionRouter);
@@ -29,5 +49,12 @@ app.use("/api", requireAuth, notesRouter);
 app.use("/api/tags", requireAuth, tagsRouter);
 app.use("/api/preferences", requireAuth, preferencesRouter);
 app.use("/api", requireAuth, outlineRouter);
+
+// Fallback JSON 404 so we don't accidentally return HTML from Vercel for unmatched API paths
+app.use((req, res) => {
+  res.status(404).json({
+    error: { code: "not_found", message: `No handler for ${req.method} ${req.path}` },
+  });
+});
 
 export default app;

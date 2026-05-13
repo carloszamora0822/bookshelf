@@ -62,7 +62,9 @@ export async function http(method, path, body) {
     const msg = (data && data.error && data.error.message)
       || (typeof data === "string" && data)
       || `HTTP ${res.status}`;
-    throw new Error(`api.${endpoint}: ${msg}`);
+    const detail = (data && data.error && data.error.detail) || "";
+    console.error(`[api] ${endpoint} → ${res.status}`, data);
+    throw new Error(`api.${endpoint}: ${msg}${detail ? ` (${detail})` : ""}`);
   }
   return data;
 }

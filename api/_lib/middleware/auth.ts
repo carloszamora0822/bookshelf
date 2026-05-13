@@ -28,6 +28,11 @@ export async function requireAuth(
   res: Response,
   next: NextFunction
 ) {
+  if (!process.env.SUPABASE_URL) {
+    res.status(500).json({ error: { code: "config", message: "SUPABASE_URL is not set on the server" } });
+    return;
+  }
+
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     res.status(401).json({ error: { code: "unauthorized", message: "Missing or invalid Authorization header" } });
@@ -38,7 +43,7 @@ export async function requireAuth(
 
   try {
     const { payload } = await jose.jwtVerify(token, getJwks(), {
-      issuer: `${process.env.SUPABASE_URL}/auth/v1`,
+      issuer: `${process.env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1`,
       audience: "authenticated",
     });
 
@@ -48,10 +53,12 @@ export async function requireAuth(
       return;
     }
 
-    req.userId = sub;
+    req.userId = sub as string;
     next();
-  } catch {
-    res.status(401).json({ error: { code: "unauthorized", message: "Invalid or expired token" } });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("requireAuth:", detail);
+    res.status(401).json({ error: { code: "unauthorized", message: "Invalid or expired token", detail } });
   }
 }
 
