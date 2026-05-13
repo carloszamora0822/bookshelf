@@ -163,24 +163,34 @@ function AuthLoading() {
 }
 
 function AuthScreen() {
+  const [mode, setMode] = useState("signin"); // "signin" | "signup"
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | working | confirm | error
   const [errMsg, setErrMsg] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
-    const v = email.trim();
-    if (!v) return;
-    setStatus("sending");
+    const em = email.trim();
+    if (!em || !password) return;
+    setStatus("working");
     setErrMsg("");
     try {
-      await window.api.auth.signIn(v);
-      setStatus("sent");
+      if (mode === "signin") {
+        await window.api.auth.signIn(em, password);
+        // onAuthChange in AuthGate will swap to the app
+      } else {
+        const { needsConfirmation } = await window.api.auth.signUp(em, password);
+        if (needsConfirmation) setStatus("confirm");
+        // else session is live; AuthGate will swap us in
+      }
     } catch (err) {
       setStatus("error");
-      setErrMsg(err.message || "Could not send magic link.");
+      setErrMsg(err.message || "Authentication failed.");
     }
   };
+
+  const isSignup = mode === "signup";
 
   return (
     <div style={SHELL_STYLE}>
@@ -189,32 +199,36 @@ function AuthScreen() {
           <span>Book<em style={{ fontStyle: "italic", color: "var(--accent)" }}>shelf</em></span>
         </div>
 
-        {status === "sent" ? (
+        {status === "confirm" ? (
           <div>
-            <div style={EYEBROW_STYLE}>Check your email</div>
-            <h1 style={DISPLAY_STYLE}>A link is on its way.</h1>
+            <div style={EYEBROW_STYLE}>Confirm your email</div>
+            <h1 style={DISPLAY_STYLE}>One more step.</h1>
             <p style={BODY_STYLE}>
-              We sent a sign-in link to <strong>{email}</strong>. Open it from
-              this device to continue.
+              We sent a confirmation link to <strong>{email}</strong>. Click it,
+              then come back here to sign in.
             </p>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              onClick={() => { setStatus("idle"); setErrMsg(""); }}
+              onClick={() => { setMode("signin"); setStatus("idle"); setErrMsg(""); }}
             >
-              Use a different email
+              Back to sign in
             </button>
           </div>
         ) : (
           <form onSubmit={submit}>
             <div style={EYEBROW_STYLE}>Welcome</div>
             <h1 style={DISPLAY_STYLE}>
-              A calm place for the books you actually intend to{" "}
-              <em style={{ fontStyle: "italic", color: "var(--accent)" }}>read</em>.
+              {isSignup ? "Make a " : "A calm place for the books you actually intend to "}
+              <em style={{ fontStyle: "italic", color: "var(--accent)" }}>
+                {isSignup ? "reading nook" : "read"}
+              </em>
+              {isSignup ? "." : "."}
             </h1>
             <p style={BODY_STYLE}>
-              Enter your email and we'll send you a magic sign-in link. No
-              passwords required.
+              {isSignup
+                ? "Create an account with your email and a password. Your browser can save it for you."
+                : "Sign in with your email and password. We'll keep you signed in on this device."}
             </p>
 
             <label style={LABEL_STYLE} htmlFor="auth-email">Email</label>
@@ -227,7 +241,21 @@ function AuthScreen() {
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={status === "sending"}
+              disabled={status === "working"}
+              style={{ width: "100%" }}
+            />
+
+            <label style={{ ...LABEL_STYLE, marginTop: 16 }} htmlFor="auth-password">Password</label>
+            <input
+              id="auth-password"
+              className="input"
+              type="password"
+              autoComplete={isSignup ? "new-password" : "current-password"}
+              placeholder={isSignup ? "At least 6 characters" : "Your password"}
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={status === "working"}
               style={{ width: "100%" }}
             />
 
@@ -238,14 +266,27 @@ function AuthScreen() {
             <button
               type="submit"
               className="btn btn-accent btn-block"
-              disabled={status === "sending" || !email.trim()}
+              disabled={status === "working" || !email.trim() || !password}
               style={{ marginTop: 14 }}
             >
-              {status === "sending" ? "Sending…" : "Send magic link"}
+              {status === "working"
+                ? (isSignup ? "Creating…" : "Signing in…")
+                : (isSignup ? "Create account" : "Sign in")}
             </button>
 
-            <div style={FINEPRINT_STYLE}>
-              By continuing, you agree to keep your library to yourself.
+            <div style={{ ...FINEPRINT_STYLE, marginTop: 18 }}>
+              {isSignup ? "Already have an account?" : "New here?"}{" "}
+              <button
+                type="button"
+                onClick={() => { setMode(isSignup ? "signin" : "signup"); setErrMsg(""); setStatus("idle"); }}
+                style={{
+                  background: "none", border: 0, padding: 0,
+                  color: "var(--accent)", cursor: "pointer",
+                  font: "inherit", textDecoration: "underline",
+                }}
+              >
+                {isSignup ? "Sign in" : "Create an account"}
+              </button>
             </div>
           </form>
         )}

@@ -76,13 +76,17 @@ function notConfiguredError() {
 }
 
 export const auth = {
-  async signIn(email) {
+  async signIn(email, password) {
     if (!supabase) throw notConfiguredError();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw new Error(`api.auth.signIn: ${error.message}`);
+  },
+
+  async signUp(email, password) {
+    if (!supabase) throw notConfiguredError();
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) throw new Error(`api.auth.signUp: ${error.message}`);
+    return { needsConfirmation: !data.session };
   },
 
   async signOut() {
